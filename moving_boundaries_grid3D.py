@@ -10,8 +10,9 @@ sns.set()
 # Set whether to run single model or ensemble, agent population size, and simulation steps 
 ENSEMBLE = False;
 ENSEMBLE_RUNS = 0;
-ECM_AGENTS_PER_DIR = [10, 10, 10];
-ECM_POPULATION_SIZE = ECM_AGENTS_PER_DIR[0] * ECM_AGENTS_PER_DIR[1] * ECM_AGENTS_PER_DIR[2]  ; 
+N = 10;
+ECM_AGENTS_PER_DIR = [N , N, N];
+ECM_POPULATION_SIZE = ECM_AGENTS_PER_DIR[0] * ECM_AGENTS_PER_DIR[1] * ECM_AGENTS_PER_DIR[2]; 
 STEPS = 400;
 # Change to false if pyflamegpu has not been built with visualisation support
 VISUALISATION = True;
@@ -20,13 +21,13 @@ DEBUG_PRINTING = False;
 # Interaction and mechanical parameters
 TIME_STEP = 0.05; # seconds
 BOUNDARY_COORDS = [1.0, -1.0, 1.0, -1.0, 1.0, -1.0]; #+X,-X,+Y,-Y,+Z,-Z
-BOUNDARY_DISP_RATES = [0.0, 0.0, 0.075, 0.0, 0.0, 0.0]; # units/second
-ECM_ECM_INTERACTION_RADIUS = 0.25;
+BOUNDARY_DISP_RATES = [0.0, 0.0, -0.05, 0.0, 0.0, 0.0]; # units/second
+ECM_ECM_INTERACTION_RADIUS = 100;
 #ECM_ECM_EQUILIBRIUM_DISTANCE = 0.45;
-ECM_ECM_EQUILIBRIUM_DISTANCE = (BOUNDARY_COORDS[0] - BOUNDARY_COORDS[1])  / int(round(ECM_POPULATION_SIZE ** (1.0 / 3.0)))
+ECM_ECM_EQUILIBRIUM_DISTANCE = (BOUNDARY_COORDS[0] - BOUNDARY_COORDS[1])  / (N - 1);
 print("ECM_ECM_EQUILIBRIUM_DISTANCE: ", ECM_ECM_EQUILIBRIUM_DISTANCE)
-ECM_BOUNDARY_INTERACTION_RADIUS = 0.2;
-ECM_BOUNDARY_EQUILIBRIUM_DISTANCE = 0.1;
+ECM_BOUNDARY_INTERACTION_RADIUS = 0.05;
+ECM_BOUNDARY_EQUILIBRIUM_DISTANCE = 0.01;
 
 ECM_K_ELAST = 1.0;
 ECM_D_DUMPING = 5.2;
@@ -295,10 +296,10 @@ class initAgentPopulations(pyflamegpu.HostFunctionCallback):
     print("current_id:", current_id);
     agents_per_dir = FLAMEGPU.environment.getPropertyArrayUInt("ECM_AGENTS_PER_DIR");
     print("agents per dir", agents_per_dir);
-    offset = 0.1; #ECM_BOUNDARY_INTERACTION_RADIUS
-    coords_x = np.linspace(BOUNDARY_COORDS[1] + offset, BOUNDARY_COORDS[0] - offset, agents_per_dir[0]);
-    coords_y = np.linspace(BOUNDARY_COORDS[3] + offset, BOUNDARY_COORDS[2] - offset, agents_per_dir[1]);
-    coords_z = np.linspace(BOUNDARY_COORDS[5] + offset, BOUNDARY_COORDS[4] - offset, agents_per_dir[2]);
+    offset = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; # +X,-X,+Y,-Y,+Z,-Z
+    coords_x = np.linspace(BOUNDARY_COORDS[1] + offset[1], BOUNDARY_COORDS[0] - offset[0], agents_per_dir[0]);
+    coords_y = np.linspace(BOUNDARY_COORDS[3] + offset[3], BOUNDARY_COORDS[2] - offset[2], agents_per_dir[1]);
+    coords_z = np.linspace(BOUNDARY_COORDS[5] + offset[5], BOUNDARY_COORDS[4] - offset[4], agents_per_dir[2]);
     print(coords_x);
     count = -1;
     i = -1;
@@ -373,6 +374,7 @@ class MoveBoundaries(pyflamegpu.HostFunctionCallback):
          global stepCounter
          global BOUNDARY_COORDS, BOUNDARY_DISP_RATES, TIME_STEP
 
+         
          if any(dr > 0.0 or dr < 0.0 for dr in BOUNDARY_DISP_RATES):
             
             #coord_boundary = FLAMEGPU.environment.getPropertyArrayFloat("COORDS_BOUNDARIES")
@@ -381,12 +383,15 @@ class MoveBoundaries(pyflamegpu.HostFunctionCallback):
             
             bcs = [BOUNDARY_COORDS[0], BOUNDARY_COORDS[1], BOUNDARY_COORDS[2], BOUNDARY_COORDS[3], BOUNDARY_COORDS[4], BOUNDARY_COORDS[5]];  #+X,-X,+Y,-Y,+Z,-Z
             FLAMEGPU.environment.setPropertyArrayFloat("COORDS_BOUNDARIES", bcs);
-            if DEBUG_PRINTING:
+            if (stepCounter > 0):
                 print ("====== MOVING BOUNDARIES ======"); 
                 print ("End of step: ", stepCounter);
                 print ("New boundary positions [+X,-X,+Y,-Y,+Z,-Z]: ", BOUNDARY_COORDS);
                 print ("==============================="); 
+                #input()
+            
          stepCounter += 1
+         
 
 mb = MoveBoundaries()
 model.addStepFunctionCallback(mb)
@@ -453,6 +458,8 @@ if pyflamegpu.VISUALISATION and VISUALISATION and not ENSEMBLE:
     # Visualisation.setInitialCameraLocation(INIT_CAM * 2, INIT_CAM, INIT_CAM);
     visualisation.setInitialCameraLocation(0.0, 0.0, INIT_CAM);
     visualisation.setCameraSpeed(0.002 * envWidth);
+    #visualisation.setSimulationSpeed(1);
+    visualisation.setBeginPaused(True);
     circ_ecm_agt = visualisation.addAgent("ECM");    
     # Position vars are named x, y, z; so they are used by default
     circ_ecm_agt.setModel(pyflamegpu.ICOSPHERE);    
