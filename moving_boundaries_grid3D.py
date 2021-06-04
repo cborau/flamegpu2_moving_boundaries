@@ -17,23 +17,26 @@ STEPS = 400;
 # Change to false if pyflamegpu has not been built with visualisation support
 VISUALISATION = True;
 DEBUG_PRINTING = False;
+PAUSE_EVERY_STEP = False;
 
 # Interaction and mechanical parameters
 TIME_STEP = 0.05; # seconds
 BOUNDARY_COORDS = [1.0, -1.0, 1.0, -1.0, 1.0, -1.0]; #+X,-X,+Y,-Y,+Z,-Z
-BOUNDARY_DISP_RATES = [0.0, 0.0, -0.05, 0.0, 0.0, 0.0]; # units/second
+BOUNDARY_DISP_RATES = [0.0, 0.0, 0.05, 0.0, 0.0, 0.0]; # units/second
+CLAMP_AGENT_TOUCHING_BOUNDARY = 1;
+ALLOW_AGENT_SLIDING = [1, 1, 0, 1, 1, 1]; #+X,-X,+Y,-Y,+Z,-Z
 ECM_ECM_INTERACTION_RADIUS = 100;
 #ECM_ECM_EQUILIBRIUM_DISTANCE = 0.45;
 ECM_ECM_EQUILIBRIUM_DISTANCE = (BOUNDARY_COORDS[0] - BOUNDARY_COORDS[1])  / (N - 1);
 print("ECM_ECM_EQUILIBRIUM_DISTANCE: ", ECM_ECM_EQUILIBRIUM_DISTANCE)
 ECM_BOUNDARY_INTERACTION_RADIUS = 0.05;
-ECM_BOUNDARY_EQUILIBRIUM_DISTANCE = 0.01;
+ECM_BOUNDARY_EQUILIBRIUM_DISTANCE = 0.0;
 
 ECM_K_ELAST = 1.0;
-ECM_D_DUMPING = 5.2;
+ECM_D_DUMPING = 1.0;
 ECM_MASS = 1.0;
 
-CLAMP_AGENT_TOUCHING_BOUNDARY = 1;
+
 
 #MAX_SEARCH_RADIUS = max([ECM_ECM_INTERACTION_RADIUS, ECM_BOUNDARY_INTERACTION_RADIUS]);
 MAX_SEARCH_RADIUS = 2.0; # this strongly affects the number of bins and therefore the memory allocated for simulations (more bins -> more memory -> faster (in theory))
@@ -113,6 +116,7 @@ env.newPropertyArrayFloat("DISP_RATES_BOUNDARIES", 6,  bdrs);
 
 # Boundary-Agent behaviour
 env.newPropertyUInt("CLAMP_AGENT_TOUCHING_BOUNDARY", CLAMP_AGENT_TOUCHING_BOUNDARY);
+env.newPropertyArrayUInt("ALLOW_AGENT_SLIDING", 6, ALLOW_AGENT_SLIDING);
 env.newPropertyFloat("ECM_BOUNDARY_INTERACTION_RADIUS", ECM_BOUNDARY_INTERACTION_RADIUS);
 env.newPropertyFloat("ECM_BOUNDARY_EQUILIBRIUM_DISTANCE", ECM_BOUNDARY_EQUILIBRIUM_DISTANCE);
 
@@ -373,7 +377,10 @@ class MoveBoundaries(pyflamegpu.HostFunctionCallback):
      def run(self, FLAMEGPU):
          global stepCounter
          global BOUNDARY_COORDS, BOUNDARY_DISP_RATES, TIME_STEP
-
+         global DEBUG_PRINTING
+         
+         if PAUSE_EVERY_STEP:
+             input() # pause everystep
          
          if any(dr > 0.0 or dr < 0.0 for dr in BOUNDARY_DISP_RATES):
             
@@ -388,7 +395,7 @@ class MoveBoundaries(pyflamegpu.HostFunctionCallback):
                 print ("End of step: ", stepCounter);
                 print ("New boundary positions [+X,-X,+Y,-Y,+Z,-Z]: ", BOUNDARY_COORDS);
                 print ("==============================="); 
-                #input()
+                
             
          stepCounter += 1
          
@@ -458,7 +465,8 @@ if pyflamegpu.VISUALISATION and VISUALISATION and not ENSEMBLE:
     # Visualisation.setInitialCameraLocation(INIT_CAM * 2, INIT_CAM, INIT_CAM);
     visualisation.setInitialCameraLocation(0.0, 0.0, INIT_CAM);
     visualisation.setCameraSpeed(0.002 * envWidth);
-    #visualisation.setSimulationSpeed(1);
+    if DEBUG_PRINTING:
+        visualisation.setSimulationSpeed(1);
     visualisation.setBeginPaused(True);
     circ_ecm_agt = visualisation.addAgent("ECM");    
     # Position vars are named x, y, z; so they are used by default

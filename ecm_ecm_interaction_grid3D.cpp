@@ -44,6 +44,9 @@ FLAMEGPU_AGENT_FUNCTION(ecm_ecm_interaction, MsgArray3D, MsgNone) {
   
   const float ECM_ECM_INTERACTION_RADIUS = FLAMEGPU->environment.getProperty<float>("ECM_ECM_INTERACTION_RADIUS");
   const float ECM_ECM_EQUILIBRIUM_DISTANCE = FLAMEGPU->environment.getProperty<float>("ECM_ECM_EQUILIBRIUM_DISTANCE");
+  // Equilibrium distance must be adapted depending on the message grid position respect to the agent. Messages in the Neuman neighbourhood will use the original
+  // whereas messages in the diagonals will use increased values.
+  float grid_equilibrium_distance = 0.0; 
   
   float agent_fx = 0.0;
   float agent_fy = 0.0;
@@ -94,6 +97,9 @@ FLAMEGPU_AGENT_FUNCTION(ecm_ecm_interaction, MsgArray3D, MsgNone) {
   float total_f = 0.0;
 
   int conn = 0;
+  int i_diff = 0;
+  int j_diff = 0;
+  int k_diff = 0;
   int ct = 0;
   int DEBUG_PRINTING = FLAMEGPU->environment.getProperty<int>("DEBUG_PRINTING");
 
@@ -110,10 +116,30 @@ FLAMEGPU_AGENT_FUNCTION(ecm_ecm_interaction, MsgArray3D, MsgNone) {
     message_grid_j = message.getVariable<uint8_t>("grid_j");
     message_grid_k = message.getVariable<uint8_t>("grid_k");
 
-    conn = abs(agent_grid_i - message_grid_i) + abs(agent_grid_j - message_grid_j) + abs(agent_grid_k - message_grid_k);
-    //printf("message id (for agent %d): %d [%d %d %d], conn = %d \n", message_id, id, message_grid_i, message_grid_j, message_grid_k, conn);
+    i_diff = abs(agent_grid_i - message_grid_i);
+    j_diff = abs(agent_grid_j - message_grid_j);
+    k_diff = abs(agent_grid_k - message_grid_k);
+    conn = i_diff + j_diff + k_diff;
+
+    /*
+    if (id == 9 || id == 10 || id == 13 || id == 14 || id == 25 || id == 26 || id == 29 || id == 30) {
+        printf("agent id %d, agent grid [%d %d %d] -> (message %d): message grid [%d %d %d], conn = %d \n", id, agent_grid_i, agent_grid_j, agent_grid_k, message_id, message_grid_i, message_grid_j, message_grid_k, conn);
+    }
+    */
+    // If conn < 2 only the Neuman neighbourhood is checked. conn < 4 checks the 26 surrounding agents
+    // ¡¡BEWARE!!: grid domain wraps itself, meaning that agents at the grid boundaries, read messages from opposite boundaries. A grid distance condition must be added to avoid that. 
     
-    if ((id != message_id) && (conn < 2)){
+    if ((id != message_id) && (conn < 4) && (i_diff < 2) && (j_diff < 2) && (k_diff < 2)){
+
+        if (conn < 2) {
+            grid_equilibrium_distance = ECM_ECM_EQUILIBRIUM_DISTANCE; //Neuman neighbourhood
+        }
+        else if (conn < 3) {
+            grid_equilibrium_distance = sqrtf(2.0) * ECM_ECM_EQUILIBRIUM_DISTANCE; //in-plane diagonals
+        }
+        else {
+            grid_equilibrium_distance = sqrtf(3.0) * ECM_ECM_EQUILIBRIUM_DISTANCE; //corners of the 3x3x3 adjacent agents
+        }
 
         ct++;
         dir_x = agent_x - message_x; 
@@ -153,7 +179,7 @@ FLAMEGPU_AGENT_FUNCTION(ecm_ecm_interaction, MsgArray3D, MsgNone) {
         // relative speed <0 means particles are getting closer
         relative_speed = vec3Length(agent_vx, agent_vy, agent_vz) * cosf(angle_agent_v_dir) - vec3Length(message_vx, message_vy, message_vz) * cosf(angle_message_v_dir);
         // if total_f > 0, agents are attracted, if <0 agents are repelled
-        total_f = (distance - ECM_ECM_EQUILIBRIUM_DISTANCE) * (k_elast)+d_dumping * relative_speed;
+        total_f = (distance - grid_equilibrium_distance) * (k_elast) + d_dumping * relative_speed;
 
         if (total_f < 0) {
             agent_f_compression += total_f;
@@ -168,10 +194,10 @@ FLAMEGPU_AGENT_FUNCTION(ecm_ecm_interaction, MsgArray3D, MsgNone) {
         agent_fy += -1 * total_f * cos_y;
         agent_fz += -1 * total_f * cos_z;
 
-        if (DEBUG_PRINTING == 1) {
+        if (DEBUG_PRINTING == 1 && (id == 9 || id == 10 || id == 13 || id == 14 || id == 25 || id == 26 || id == 29 || id == 30)) {
             printf("ECM interaction [id1: %d - id2: %d] agent_pos (%2.6f, %2.6f, %2.6f), message_pos (%2.6f, %2.6f, %2.6f)\n", id, message_id, agent_x, agent_y, agent_z, message_x, message_y, message_z);
             printf("ECM interaction id1: %d - id2: %d distance -> (%2.6f)\n", id, message_id, distance);
-            printf("ECM interaction id1: %d - id2: %d total_f -> %2.6f (%2.6f , %2.6f, %2.6f)\n", id, message_id, total_f, agent_fx, agent_fy, agent_fy);
+            printf("ECM interaction id1: %d - id2: %d total_f -> %2.6f (%2.6f , %2.6f, %2.6f)\n", id, message_id, total_f, -1 * total_f * cos_x, -1 * total_f * cos_y, -1 * total_f * cos_z);
         }
     }
   }
