@@ -1,7 +1,7 @@
 FLAMEGPU_HOST_DEVICE_FUNCTION void boundPosition(int id, float &x, float &y, float &z, 
         uint8_t &cxpos, uint8_t &cxneg, uint8_t &cypos, uint8_t &cyneg, uint8_t &czpos, uint8_t &czneg, 
         const float bxpos, const float bxneg, const float bypos, const float byneg, const float bzpos, const float bzneg,
-        const int clamp_on, const float ecm_boundary_equilibrium_distance) {
+        const int clamp_on_xpos, const int clamp_on_xneg, const int clamp_on_ypos, const int clamp_on_yneg, const int clamp_on_zpos, const int clamp_on_zneg, const float ecm_boundary_equilibrium_distance) {
     
   //if (id == 9 || id = 10) {
   //    printf("Boundposition ANTES agent %d position %2.4f, %2.4f, %2.4f ->  boundary pos: [%2.4f, %2.4f, %2.4f, %2.4f, %2.4f, %2.4f], clamping: [%d, %d, %d, %d, %d, %d] \n", id, x, y, z, bxpos, bxneg, bypos, byneg, bzpos, bzneg, cxpos, cxneg, cypos, cyneg, czpos, czneg);
@@ -11,10 +11,10 @@ FLAMEGPU_HOST_DEVICE_FUNCTION void boundPosition(int id, float &x, float &y, flo
   if (cxpos == 1) {
       x = bxpos - ecm_boundary_equilibrium_distance; // redundant. Could say "do nothing"
   } else {
-      if (x > bxpos || fabsf(x - bxpos) < ecm_boundary_equilibrium_distance + EPSILON) {
-          x = bxpos - ecm_boundary_equilibrium_distance;
-          if (clamp_on == 1) {
+      if (x > bxpos || fabsf(x - bxpos) < ecm_boundary_equilibrium_distance + EPSILON) {          
+          if (clamp_on_xpos == 1) {
               cxpos = 1;
+              x = bxpos - ecm_boundary_equilibrium_distance;
           }
       }
   }
@@ -22,10 +22,10 @@ FLAMEGPU_HOST_DEVICE_FUNCTION void boundPosition(int id, float &x, float &y, flo
   if (cxneg == 1) {
       x = bxneg + ecm_boundary_equilibrium_distance;
   } else {
-      if (x < bxneg || fabsf(x - bxneg) < ecm_boundary_equilibrium_distance + EPSILON) {
-          x = bxneg + ecm_boundary_equilibrium_distance;
-          if (clamp_on == 1) {
+      if (x < bxneg || fabsf(x - bxneg) < ecm_boundary_equilibrium_distance + EPSILON) {          
+          if (clamp_on_xneg == 1) {
               cxneg = 1;
+              x = bxneg + ecm_boundary_equilibrium_distance;
           }
       }
   }
@@ -34,9 +34,9 @@ FLAMEGPU_HOST_DEVICE_FUNCTION void boundPosition(int id, float &x, float &y, flo
       y = bypos - ecm_boundary_equilibrium_distance;
   } else {
       if (y > bypos || fabsf(y - bypos) < ecm_boundary_equilibrium_distance + EPSILON) {
-          y = bypos - ecm_boundary_equilibrium_distance;
-          if (clamp_on == 1) {
+          if (clamp_on_ypos == 1) {
               cypos = 1;
+              y = bypos - ecm_boundary_equilibrium_distance;
           }
       }
   }
@@ -44,10 +44,10 @@ FLAMEGPU_HOST_DEVICE_FUNCTION void boundPosition(int id, float &x, float &y, flo
   if (cyneg == 1) {
       y = byneg + ecm_boundary_equilibrium_distance;
   } else {
-      if (y < byneg || fabsf(y - byneg) < ecm_boundary_equilibrium_distance + EPSILON) {
-          y = byneg + ecm_boundary_equilibrium_distance;
-          if (clamp_on == 1) {
+      if (y < byneg || fabsf(y - byneg) < ecm_boundary_equilibrium_distance + EPSILON) {     
+          if (clamp_on_yneg == 1) {
               cyneg = 1;
+              y = byneg + ecm_boundary_equilibrium_distance;
           }
       }
   }
@@ -57,9 +57,9 @@ FLAMEGPU_HOST_DEVICE_FUNCTION void boundPosition(int id, float &x, float &y, flo
       z = bzpos - ecm_boundary_equilibrium_distance;
   } else {
       if (z > bzpos || fabsf(z - bzpos) < ecm_boundary_equilibrium_distance + EPSILON) {
-          z = bzpos - ecm_boundary_equilibrium_distance;
-          if (clamp_on == 1) {
+          if (clamp_on_zpos == 1) {
               czpos = 1;
+              z = bzpos - ecm_boundary_equilibrium_distance;
           }
       }
   }
@@ -69,9 +69,9 @@ FLAMEGPU_HOST_DEVICE_FUNCTION void boundPosition(int id, float &x, float &y, flo
   }
   else {
       if (z < bzneg || fabsf(z - bzneg) < ecm_boundary_equilibrium_distance + EPSILON) {
-          z = bzneg + ecm_boundary_equilibrium_distance;
-          if (clamp_on == 1) {
+          if (clamp_on_zneg == 1) {
               czneg = 1;
+              z = bzneg + ecm_boundary_equilibrium_distance;
           }
       }
   }
@@ -148,7 +148,12 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
   const float DISP_RATE_BOUNDARY_Y_NEG = FLAMEGPU->environment.getProperty<float>("DISP_RATES_BOUNDARIES",3);
   const float DISP_RATE_BOUNDARY_Z_POS = FLAMEGPU->environment.getProperty<float>("DISP_RATES_BOUNDARIES",4);
   const float DISP_RATE_BOUNDARY_Z_NEG = FLAMEGPU->environment.getProperty<float>("DISP_RATES_BOUNDARIES",5);
-  const int CLAMP_AGENT_TOUCHING_BOUNDARY = FLAMEGPU->environment.getProperty<int>("CLAMP_AGENT_TOUCHING_BOUNDARY");
+  const int CLAMP_AGENT_TOUCHING_BOUNDARY_X_POS = FLAMEGPU->environment.getProperty<int>("CLAMP_AGENT_TOUCHING_BOUNDARY", 0);
+  const int CLAMP_AGENT_TOUCHING_BOUNDARY_X_NEG = FLAMEGPU->environment.getProperty<int>("CLAMP_AGENT_TOUCHING_BOUNDARY", 1);
+  const int CLAMP_AGENT_TOUCHING_BOUNDARY_Y_POS = FLAMEGPU->environment.getProperty<int>("CLAMP_AGENT_TOUCHING_BOUNDARY", 2);
+  const int CLAMP_AGENT_TOUCHING_BOUNDARY_Y_NEG = FLAMEGPU->environment.getProperty<int>("CLAMP_AGENT_TOUCHING_BOUNDARY", 3);
+  const int CLAMP_AGENT_TOUCHING_BOUNDARY_Z_POS = FLAMEGPU->environment.getProperty<int>("CLAMP_AGENT_TOUCHING_BOUNDARY", 4);
+  const int CLAMP_AGENT_TOUCHING_BOUNDARY_Z_NEG = FLAMEGPU->environment.getProperty<int>("CLAMP_AGENT_TOUCHING_BOUNDARY", 5);
   const int ALLOW_AGENT_SLIDING_X_POS = FLAMEGPU->environment.getProperty<int>("ALLOW_AGENT_SLIDING", 0);
   const int ALLOW_AGENT_SLIDING_X_NEG = FLAMEGPU->environment.getProperty<int>("ALLOW_AGENT_SLIDING", 1);
   const int ALLOW_AGENT_SLIDING_Y_POS = FLAMEGPU->environment.getProperty<int>("ALLOW_AGENT_SLIDING", 2);
@@ -275,7 +280,8 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
   boundPosition(id,agent_x, agent_y, agent_z, 
                 clamped_bx_pos, clamped_bx_neg, clamped_by_pos, clamped_by_neg, clamped_bz_pos, clamped_bz_neg, 
                 COORD_BOUNDARY_X_POS, COORD_BOUNDARY_X_NEG, COORD_BOUNDARY_Y_POS, COORD_BOUNDARY_Y_NEG, COORD_BOUNDARY_Z_POS, COORD_BOUNDARY_Z_NEG,
-                CLAMP_AGENT_TOUCHING_BOUNDARY, ECM_BOUNDARY_EQUILIBRIUM_DISTANCE);
+                CLAMP_AGENT_TOUCHING_BOUNDARY_X_POS, CLAMP_AGENT_TOUCHING_BOUNDARY_X_NEG, CLAMP_AGENT_TOUCHING_BOUNDARY_Y_POS, CLAMP_AGENT_TOUCHING_BOUNDARY_Y_NEG, CLAMP_AGENT_TOUCHING_BOUNDARY_Z_POS, CLAMP_AGENT_TOUCHING_BOUNDARY_Z_NEG,
+                ECM_BOUNDARY_EQUILIBRIUM_DISTANCE);
 
   
   //if (id == 9 || id == 10 || id == 13 || id == 14 || id == 25 || id == 26 || id == 29 || id == 30) {
