@@ -42,7 +42,6 @@ FLAMEGPU_AGENT_FUNCTION(ecm_ecm_interaction, MsgArray3D, MsgNone) {
   // Dumping constant of the ecm 
   const float d_dumping = FLAMEGPU->getVariable<float>("d_dumping");
   
-  const float ECM_ECM_INTERACTION_RADIUS = FLAMEGPU->environment.getProperty<float>("ECM_ECM_INTERACTION_RADIUS");
   const float ECM_ECM_EQUILIBRIUM_DISTANCE = FLAMEGPU->environment.getProperty<float>("ECM_ECM_EQUILIBRIUM_DISTANCE");
   // Equilibrium distance must be adapted depending on the message grid position respect to the agent. Messages in the Neuman neighbourhood will use the original
   // whereas messages in the diagonals will use increased values.

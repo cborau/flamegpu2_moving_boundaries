@@ -4,30 +4,36 @@ import seaborn as sns
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+import pathlib
 
 sns.set()
 
 # Set whether to run single model or ensemble, agent population size, and simulation steps 
 ENSEMBLE = False;
 ENSEMBLE_RUNS = 0;
-N = 10;
+N = 4;
 ECM_AGENTS_PER_DIR = [N , N, N];
 ECM_POPULATION_SIZE = ECM_AGENTS_PER_DIR[0] * ECM_AGENTS_PER_DIR[1] * ECM_AGENTS_PER_DIR[2]; 
-STEPS = 400;
+STEPS = 30;
 # Change to false if pyflamegpu has not been built with visualisation support
 VISUALISATION = True;
 DEBUG_PRINTING = False;
 PAUSE_EVERY_STEP = False;
 SAVE_DATA_TO_FILE = True;
 SAVE_EVERY_N_STEPS = 10;
+CURR_PATH = pathlib.Path().absolute();
+RES_PATH = CURR_PATH / 'result_files';
+RES_PATH.mkdir(parents=True, exist_ok=True);
+
+print("Executing in ", CURR_PATH)
 
 # Interaction and mechanical parameters
 TIME_STEP = 0.05; # seconds
-BOUNDARY_COORDS = [0.5, -0.5, 0.5, -0.5, 0.5, -0.50]; #+X,-X,+Y,-Y,+Z,-Z
-BOUNDARY_DISP_RATES = [0.0, 0.0, -0.05, 0.0, 0.0, 0.0]; # units/second
+BOUNDARY_COORDS = [0.5, -0.5, 0.5, -0.5, 0.5, -0.5]; #+X,-X,+Y,-Y,+Z,-Z
+BOUNDARY_DISP_RATES = [0.0, 0.0, -0.025, 0.0, 0.0, 0.0]; # units/second
 CLAMP_AGENT_TOUCHING_BOUNDARY = [0, 0, 1, 1, 0, 0]; #+X,-X,+Y,-Y,+Z,-Z
 ALLOW_AGENT_SLIDING = [1, 1, 0, 1, 1, 1]; #+X,-X,+Y,-Y,+Z,-Z
-ECM_ECM_INTERACTION_RADIUS = 100;
+#ECM_ECM_INTERACTION_RADIUS = 100;
 #ECM_ECM_EQUILIBRIUM_DISTANCE = 0.45;
 ECM_ECM_EQUILIBRIUM_DISTANCE = (BOUNDARY_COORDS[0] - BOUNDARY_COORDS[1])  / (N - 1);
 print("ECM_ECM_EQUILIBRIUM_DISTANCE: ", ECM_ECM_EQUILIBRIUM_DISTANCE)
@@ -94,7 +100,7 @@ env.newPropertyFloat("DELTA_TIME", TIME_STEP);
 # ------------------------------------------------------
 # ECM BEHAVIOUR 
 # ------------------------------------------------------
-env.newPropertyFloat("ECM_ECM_INTERACTION_RADIUS", ECM_ECM_INTERACTION_RADIUS);
+#env.newPropertyFloat("ECM_ECM_INTERACTION_RADIUS", ECM_ECM_INTERACTION_RADIUS);
 # Equilibrium radius at which elastic force is 0. 
 # If ECM_ECM_INTERACTION_RADIUS > ECM_ECM_EQUILIBRIUM_DISTANCE: both repulsion/atraction can occur
 # If ECM_ECM_INTERACTION_RADIUS <= ECM_ECM_EQUILIBRIUM_DISTANCE: only repulsion can occur
@@ -432,19 +438,75 @@ class SumBoundaryForces(pyflamegpu.HostFunctionCallback):
 
 class SaveDataToFile(pyflamegpu.HostFunctionCallback):
     def __init__(self):
+        global N, BOUNDARY_COORDS
         super().__init__()
-
+        self.header = list()
+        self.header.append("# vtk DataFile Version 2.0")
+        self.header.append("ECM data")
+        self.header.append("ASCII")
+        self.header.append("DATASET POLYDATA")
+        self.header.append("POINTS {} float".format(8 + N*N*N)) #8 corners + number of ECM agents 
+        self.header.append("{} {} {}".format(BOUNDARY_COORDS[0],BOUNDARY_COORDS[2],BOUNDARY_COORDS[4]))
+        self.header.append("{} {} {}".format(BOUNDARY_COORDS[1],BOUNDARY_COORDS[2],BOUNDARY_COORDS[4]))
+        self.header.append("{} {} {}".format(BOUNDARY_COORDS[1],BOUNDARY_COORDS[3],BOUNDARY_COORDS[4]))
+        self.header.append("{} {} {}".format(BOUNDARY_COORDS[0],BOUNDARY_COORDS[3],BOUNDARY_COORDS[4]))
+        self.header.append("{} {} {}".format(BOUNDARY_COORDS[0],BOUNDARY_COORDS[2],BOUNDARY_COORDS[5]))
+        self.header.append("{} {} {}".format(BOUNDARY_COORDS[1],BOUNDARY_COORDS[2],BOUNDARY_COORDS[5]))
+        self.header.append("{} {} {}".format(BOUNDARY_COORDS[1],BOUNDARY_COORDS[3],BOUNDARY_COORDS[5]))
+        self.header.append("{} {} {}".format(BOUNDARY_COORDS[0],BOUNDARY_COORDS[3],BOUNDARY_COORDS[5]))
+        self.domaindata = list()
+        self.domaindata.append("POLYGONS 6 30")
+        self.domaindata.append("4 0 3 7 4")
+        self.domaindata.append("4 1 2 6 5")
+        self.domaindata.append("4 1 0 4 5")
+        self.domaindata.append("4 2 3 7 6")
+        self.domaindata.append("4 0 1 2 3")
+        self.domaindata.append("4 4 5 6 7")
+        self.domaindata.append("CELL_DATA 6")
+        self.domaindata.append("SCALARS boundary_index int 1")
+        self.domaindata.append("LOOKUP_TABLE default")
+        self.domaindata.append("0")
+        self.domaindata.append("1")
+        self.domaindata.append("2")
+        self.domaindata.append("3")
+        self.domaindata.append("4")
+        self.domaindata.append("5")
+        self.domaindata.append("NORMALS boundary_normals float")
+        self.domaindata.append("1 0 0")
+        self.domaindata.append("-1 0 0")
+        self.domaindata.append("0 1 0")
+        self.domaindata.append("0 -1 0")
+        self.domaindata.append("0 0 1")
+        self.domaindata.append("0 0 -1")
+ 
     def run(self, FLAMEGPU):
         global SAVE_DATA_TO_FILE, SAVE_EVERY_N_STEPS
+        global RES_PATH        
         global stepCounter
 
         if SAVE_DATA_TO_FILE:
             if stepCounter % SAVE_EVERY_N_STEPS == 0:
+                file_name = 'ecm_data_t{:02d}.vtk'.format(stepCounter)
+                file_path = RES_PATH / file_name
                 agent = FLAMEGPU.agent("ECM");
-                av = agent.getPopulationData(); # this returns an DeviceAgentVector 
-                for ai in av:
-                    x = ai.getVariableFloat("x")
-                print ("====== SAVING DATA FROM Step {} TO FILE ======".format(stepCounter))
+                sum_bx_pos = agent.sumFloat("f_bx_pos")
+                sum_bx_neg = agent.sumFloat("f_bx_neg")
+                sum_by_pos = agent.sumFloat("f_by_pos")
+                sum_by_neg = agent.sumFloat("f_by_neg")
+                sum_bz_pos = agent.sumFloat("f_bz_pos")
+                sum_bz_neg = agent.sumFloat("f_bz_neg")
+
+                #av = agent.getPopulationData(); # this returns a DeviceAgentVector 
+                #for ai in av:
+                   #x = ai.getVariableFloat("x")
+                   #print(x)
+                print ("====== SAVING DATA FROM Step {:03d} TO FILE ======".format(stepCounter))
+                with open(str(file_path), 'w') as file:
+                    for line in self.header:
+                        file.write(line  + '\n')
+                    # TODO PRINT POINT DATA
+                    for line in self.domaindata:
+                        file.write(line  + '\n')
                 print ("... succesful save ")
                 print ("=================================")
 
