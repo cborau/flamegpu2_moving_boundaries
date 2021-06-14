@@ -18,11 +18,13 @@ STEPS = 400;
 VISUALISATION = True;
 DEBUG_PRINTING = False;
 PAUSE_EVERY_STEP = False;
+SAVE_DATA_TO_FILE = True;
+SAVE_EVERY_N_STEPS = 10;
 
 # Interaction and mechanical parameters
 TIME_STEP = 0.05; # seconds
-BOUNDARY_COORDS = [1.0, -1.0, 1.0, -1.0, 1.0, -1.0]; #+X,-X,+Y,-Y,+Z,-Z
-BOUNDARY_DISP_RATES = [0.0, 0.0, 0.05, 0.0, 0.0, 0.0]; # units/second
+BOUNDARY_COORDS = [0.5, -0.5, 0.5, -0.5, 0.5, -0.50]; #+X,-X,+Y,-Y,+Z,-Z
+BOUNDARY_DISP_RATES = [0.0, 0.0, -0.05, 0.0, 0.0, 0.0]; # units/second
 CLAMP_AGENT_TOUCHING_BOUNDARY = [0, 0, 1, 1, 0, 0]; #+X,-X,+Y,-Y,+Z,-Z
 ALLOW_AGENT_SLIDING = [1, 1, 0, 1, 1, 1]; #+X,-X,+Y,-Y,+Z,-Z
 ECM_ECM_INTERACTION_RADIUS = 100;
@@ -195,9 +197,15 @@ ecm_agent.newVariableFloat("fz");
 ecm_agent.newVariableFloat("k_elast");
 ecm_agent.newVariableFloat("d_dumping");
 ecm_agent.newVariableFloat("mass");
-ecm_agent.newVariableFloat("boundary_fx");
+ecm_agent.newVariableFloat("boundary_fx"); #force coming from the boundaries. Currently unused
 ecm_agent.newVariableFloat("boundary_fy");
 ecm_agent.newVariableFloat("boundary_fz");
+ecm_agent.newVariableFloat("f_bx_pos"); #force transmitted to the boundary when agent is clamped
+ecm_agent.newVariableFloat("f_bx_neg");
+ecm_agent.newVariableFloat("f_by_pos");
+ecm_agent.newVariableFloat("f_by_neg");
+ecm_agent.newVariableFloat("f_bz_pos");
+ecm_agent.newVariableFloat("f_bz_neg");
 ecm_agent.newVariableFloat("f_extension");
 ecm_agent.newVariableFloat("f_compression");
 ecm_agent.newVariableFloat("elastic_energy");
@@ -335,6 +343,12 @@ class initAgentPopulations(pyflamegpu.HostFunctionCallback):
                 instance.setVariableFloat("boundary_fx", 0.0);
                 instance.setVariableFloat("boundary_fy", 0.0);
                 instance.setVariableFloat("boundary_fz", 0.0);
+                instance.setVariableFloat("f_bx_pos", 0.0);
+                instance.setVariableFloat("f_bx_neg", 0.0);
+                instance.setVariableFloat("f_by_pos", 0.0);
+                instance.setVariableFloat("f_by_neg", 0.0);
+                instance.setVariableFloat("f_bz_pos", 0.0);
+                instance.setVariableFloat("f_bz_neg", 0.0);
                 instance.setVariableFloat("f_extension", 0.0);
                 instance.setVariableFloat("f_compression", 0.0);
                 instance.setVariableFloat("elastic_energy", 0.0);
@@ -360,7 +374,7 @@ model.addInitFunctionCallback(initialAgentPopulation);
 #model.addInitFunctionCallback(initialECMPopulation);
 
 """
-  Example step function for later reference
+  STEP FUNCTIONS
 """
 stepCounter = 1
 class MoveBoundaries(pyflamegpu.HostFunctionCallback):
@@ -377,7 +391,7 @@ class MoveBoundaries(pyflamegpu.HostFunctionCallback):
      def run(self, FLAMEGPU):
          global stepCounter
          global BOUNDARY_COORDS, BOUNDARY_DISP_RATES, TIME_STEP
-         global DEBUG_PRINTING
+         global DEBUG_PRINTING, PAUSE_EVERY_STEP
          
          if PAUSE_EVERY_STEP:
              input() # pause everystep
@@ -388,20 +402,64 @@ class MoveBoundaries(pyflamegpu.HostFunctionCallback):
             for i in range(6):                
                 BOUNDARY_COORDS[i] += (BOUNDARY_DISP_RATES[i] * TIME_STEP)
             
-            bcs = [BOUNDARY_COORDS[0], BOUNDARY_COORDS[1], BOUNDARY_COORDS[2], BOUNDARY_COORDS[3], BOUNDARY_COORDS[4], BOUNDARY_COORDS[5]];  #+X,-X,+Y,-Y,+Z,-Z
-            FLAMEGPU.environment.setPropertyArrayFloat("COORDS_BOUNDARIES", bcs);
+            bcs = [BOUNDARY_COORDS[0], BOUNDARY_COORDS[1], BOUNDARY_COORDS[2], BOUNDARY_COORDS[3], BOUNDARY_COORDS[4], BOUNDARY_COORDS[5]]  #+X,-X,+Y,-Y,+Z,-Z
+            FLAMEGPU.environment.setPropertyArrayFloat("COORDS_BOUNDARIES", bcs)
             if (stepCounter > 0):
-                print ("====== MOVING BOUNDARIES ======"); 
-                print ("End of step: ", stepCounter);
-                print ("New boundary positions [+X,-X,+Y,-Y,+Z,-Z]: ", BOUNDARY_COORDS);
-                print ("==============================="); 
+                print ("====== MOVING BOUNDARIES ======") 
+                print ("End of step: ", stepCounter)
+                print ("New boundary positions [+X,-X,+Y,-Y,+Z,-Z]: ", BOUNDARY_COORDS)
+                print ("===============================")
                 
             
          stepCounter += 1
-         
+
+class SumBoundaryForces(pyflamegpu.HostFunctionCallback):
+    def __init__(self):
+        super().__init__()
+
+    def run(self, FLAMEGPU):
+        agent = FLAMEGPU.agent("ECM")        
+        sum_bx_pos = agent.sumFloat("f_bx_pos")
+        sum_bx_neg = agent.sumFloat("f_bx_neg")
+        sum_by_pos = agent.sumFloat("f_by_pos")
+        sum_by_neg = agent.sumFloat("f_by_neg")
+        sum_bz_pos = agent.sumFloat("f_bz_pos")
+        sum_bz_neg = agent.sumFloat("f_bz_neg")
+        print ("====== FORCE ON BOUNDARIES ======")
+        print ("Total forces [+X,-X,+Y,-Y,+Z,-Z]: ", sum_bx_pos, sum_bx_neg, sum_by_pos, sum_by_neg, sum_bz_pos, sum_bz_neg)
+        print ("=================================")
+        # TODO: IMPLEMENT BOUNDARY MOVEMENT DUE TO THE FORCES
+
+class SaveDataToFile(pyflamegpu.HostFunctionCallback):
+    def __init__(self):
+        super().__init__()
+
+    def run(self, FLAMEGPU):
+        global SAVE_DATA_TO_FILE, SAVE_EVERY_N_STEPS
+        global stepCounter
+
+        if SAVE_DATA_TO_FILE:
+            if stepCounter % SAVE_EVERY_N_STEPS == 0:
+                agent = FLAMEGPU.agent("ECM");
+                av = agent.getPopulationData(); # this returns an DeviceAgentVector 
+                for ai in av:
+                    x = ai.getVariableFloat("x")
+                print ("====== SAVING DATA FROM Step {} TO FILE ======".format(stepCounter))
+                print ("... succesful save ")
+                print ("=================================")
+
+sdf = SaveDataToFile()
+model.addStepFunctionCallback(sdf)
+
+sbf = SumBoundaryForces()
+model.addStepFunctionCallback(sbf)
 
 mb = MoveBoundaries()
 model.addStepFunctionCallback(mb)
+
+"""
+  END OF STEP FUNCTIONS
+"""
 
 """
   Control flow
@@ -480,7 +538,7 @@ if pyflamegpu.VISUALISATION and VISUALISATION and not ENSEMBLE:
     f_max = ECM_K_ELAST * (ECM_ECM_EQUILIBRIUM_DISTANCE);
     max_energy = 0.5 * (f_max * f_max ) / ECM_K_ELAST;
     print("max force, max energy: ", f_max, max_energy);
-    circ_ecm_agt.setColor(pyflamegpu.HSVInterpolation.GREENRED("elastic_energy",0.00000001, max_energy * 1.0));
+    circ_ecm_agt.setColor(pyflamegpu.HSVInterpolation.GREENRED("elastic_energy",0.00000001, max_energy * 1.0));    
     square_bcorner_agt = visualisation.addAgent("BCORNER");
     square_bcorner_agt.setModel(pyflamegpu.CUBE);
     square_bcorner_agt.setModelScale(0.05);

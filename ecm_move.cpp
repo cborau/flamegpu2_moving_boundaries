@@ -102,6 +102,14 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
   uint8_t clamped_by_neg = FLAMEGPU->getVariable<uint8_t>("clamped_by_neg");
   uint8_t clamped_bz_pos = FLAMEGPU->getVariable<uint8_t>("clamped_bz_pos");
   uint8_t clamped_bz_neg = FLAMEGPU->getVariable<uint8_t>("clamped_bz_neg");
+
+  // Agent force transmitted to clamped boundaries
+  float f_bx_pos = 0.0;
+  float f_bx_neg = 0.0;
+  float f_by_pos = 0.0;
+  float f_by_neg = 0.0;
+  float f_bz_pos = 0.0;
+  float f_bz_neg = 0.0;
    
   // Mass of the ecm agent
   const float mass = FLAMEGPU->getVariable<float>("mass");
@@ -190,6 +198,7 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
   if (clamped_bx_pos == 1){
     agent_x = COORD_BOUNDARY_X_POS - ECM_BOUNDARY_EQUILIBRIUM_DISTANCE;
     agent_vx = DISP_RATE_BOUNDARY_X_POS;
+    f_bx_pos = agent_fx;
     if (ALLOW_AGENT_SLIDING_X_POS == 0) {
         if ((clamped_by_pos == 0) && (clamped_by_neg == 0)) { // this must be checked to avoid overwriting when agent is clamped to multiple boundaries
             agent_vy = 0.0;
@@ -204,6 +213,7 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
   if (clamped_bx_neg == 1){
     agent_x = COORD_BOUNDARY_X_NEG + ECM_BOUNDARY_EQUILIBRIUM_DISTANCE;
     agent_vx = DISP_RATE_BOUNDARY_X_NEG;
+    f_bx_neg = agent_fx;
     if (ALLOW_AGENT_SLIDING_X_NEG == 0) {
         if ((clamped_by_pos == 0) && (clamped_by_neg == 0)) { 
             agent_vy = 0.0;
@@ -218,6 +228,7 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
   if (clamped_by_pos == 1){
     agent_y = COORD_BOUNDARY_Y_POS - ECM_BOUNDARY_EQUILIBRIUM_DISTANCE;
     agent_vy = DISP_RATE_BOUNDARY_Y_POS;
+    f_by_pos = agent_fy;
     if (ALLOW_AGENT_SLIDING_Y_POS == 0) {
         if ((clamped_bx_pos == 0) && (clamped_bx_neg == 0)) { 
             agent_vx = 0.0;
@@ -232,6 +243,7 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
   if (clamped_by_neg == 1){
     agent_y = COORD_BOUNDARY_Y_NEG + ECM_BOUNDARY_EQUILIBRIUM_DISTANCE;
     agent_vy = DISP_RATE_BOUNDARY_Y_NEG;
+    f_by_neg = agent_fy;
     if (ALLOW_AGENT_SLIDING_Y_NEG == 0) {
         if ((clamped_bx_pos == 0) && (clamped_bx_neg == 0)) {
             agent_vx = 0.0;
@@ -246,6 +258,7 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
   if (clamped_bz_pos == 1){
     agent_z = COORD_BOUNDARY_Z_POS - ECM_BOUNDARY_EQUILIBRIUM_DISTANCE;
     agent_vz = DISP_RATE_BOUNDARY_Z_POS;
+    f_bz_pos = agent_fz;
     if (ALLOW_AGENT_SLIDING_Z_POS == 0) {
         if ((clamped_bx_pos == 0) && (clamped_bx_neg == 0)) {
             agent_vx = 0.0;
@@ -260,6 +273,7 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
   if (clamped_bz_neg == 1){
     agent_z = COORD_BOUNDARY_Z_NEG + ECM_BOUNDARY_EQUILIBRIUM_DISTANCE;
     agent_vz = DISP_RATE_BOUNDARY_Z_NEG;
+    f_bz_neg = agent_fz;
     if (ALLOW_AGENT_SLIDING_Z_NEG == 0) {
         if ((clamped_bx_pos == 0) && (clamped_bx_neg == 0)) {
             agent_vx = 0.0;
@@ -304,6 +318,12 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
   FLAMEGPU->setVariable<uint8_t>("clamped_by_neg", clamped_by_neg);
   FLAMEGPU->setVariable<uint8_t>("clamped_bz_pos", clamped_bz_pos);
   FLAMEGPU->setVariable<uint8_t>("clamped_bz_neg", clamped_bz_neg);
+  FLAMEGPU->setVariable<float>("f_bx_pos", f_bx_pos);
+  FLAMEGPU->setVariable<float>("f_bx_neg", f_bx_neg);
+  FLAMEGPU->setVariable<float>("f_by_pos", f_by_pos);
+  FLAMEGPU->setVariable<float>("f_by_neg", f_by_neg);
+  FLAMEGPU->setVariable<float>("f_bz_pos", f_bz_pos);
+  FLAMEGPU->setVariable<float>("f_bz_neg", f_bz_neg);
 
   return ALIVE;
 }
