@@ -11,10 +11,10 @@ sns.set()
 # Set whether to run single model or ensemble, agent population size, and simulation steps 
 ENSEMBLE = False;
 ENSEMBLE_RUNS = 0;
-N = 4;
+N = 10;
 ECM_AGENTS_PER_DIR = [N , N, N];
 ECM_POPULATION_SIZE = ECM_AGENTS_PER_DIR[0] * ECM_AGENTS_PER_DIR[1] * ECM_AGENTS_PER_DIR[2]; 
-STEPS = 30;
+STEPS = 400;
 # Change to false if pyflamegpu has not been built with visualisation support
 VISUALISATION = True;
 DEBUG_PRINTING = False;
@@ -383,6 +383,7 @@ model.addInitFunctionCallback(initialAgentPopulation);
   STEP FUNCTIONS
 """
 stepCounter = 1
+
 class MoveBoundaries(pyflamegpu.HostFunctionCallback):
      """
      pyflamegpu requires step functions to be a class which extends the StepFunction base class.
@@ -438,7 +439,7 @@ class SumBoundaryForces(pyflamegpu.HostFunctionCallback):
 
 class SaveDataToFile(pyflamegpu.HostFunctionCallback):
     def __init__(self):
-        global N, BOUNDARY_COORDS
+        global N
         super().__init__()
         self.header = list()
         self.header.append("# vtk DataFile Version 2.0")
@@ -446,14 +447,7 @@ class SaveDataToFile(pyflamegpu.HostFunctionCallback):
         self.header.append("ASCII")
         self.header.append("DATASET POLYDATA")
         self.header.append("POINTS {} float".format(8 + N*N*N)) #8 corners + number of ECM agents 
-        self.header.append("{} {} {}".format(BOUNDARY_COORDS[0],BOUNDARY_COORDS[2],BOUNDARY_COORDS[4]))
-        self.header.append("{} {} {}".format(BOUNDARY_COORDS[1],BOUNDARY_COORDS[2],BOUNDARY_COORDS[4]))
-        self.header.append("{} {} {}".format(BOUNDARY_COORDS[1],BOUNDARY_COORDS[3],BOUNDARY_COORDS[4]))
-        self.header.append("{} {} {}".format(BOUNDARY_COORDS[0],BOUNDARY_COORDS[3],BOUNDARY_COORDS[4]))
-        self.header.append("{} {} {}".format(BOUNDARY_COORDS[0],BOUNDARY_COORDS[2],BOUNDARY_COORDS[5]))
-        self.header.append("{} {} {}".format(BOUNDARY_COORDS[1],BOUNDARY_COORDS[2],BOUNDARY_COORDS[5]))
-        self.header.append("{} {} {}".format(BOUNDARY_COORDS[1],BOUNDARY_COORDS[3],BOUNDARY_COORDS[5]))
-        self.header.append("{} {} {}".format(BOUNDARY_COORDS[0],BOUNDARY_COORDS[3],BOUNDARY_COORDS[5]))
+        #self.header.append("POINTS {} float".format(8))         
         self.domaindata = list()
         self.domaindata.append("POLYGONS 6 30")
         self.domaindata.append("4 0 3 7 4")
@@ -482,31 +476,91 @@ class SaveDataToFile(pyflamegpu.HostFunctionCallback):
     def run(self, FLAMEGPU):
         global SAVE_DATA_TO_FILE, SAVE_EVERY_N_STEPS
         global RES_PATH        
-        global stepCounter
+        global stepCounter, fileCounter, BOUNDARY_COORDS
 
         if SAVE_DATA_TO_FILE:
-            if stepCounter % SAVE_EVERY_N_STEPS == 0:
-                file_name = 'ecm_data_t{:02d}.vtk'.format(stepCounter)
+            if stepCounter % SAVE_EVERY_N_STEPS == 0 or stepCounter == 1:
+                file_name = 'ecm_data_t{:03d}.vtk'.format(stepCounter)
                 file_path = RES_PATH / file_name
                 agent = FLAMEGPU.agent("ECM");
-                sum_bx_pos = agent.sumFloat("f_bx_pos")
-                sum_bx_neg = agent.sumFloat("f_bx_neg")
-                sum_by_pos = agent.sumFloat("f_by_pos")
-                sum_by_neg = agent.sumFloat("f_by_neg")
-                sum_bz_pos = agent.sumFloat("f_bz_pos")
-                sum_bz_neg = agent.sumFloat("f_bz_neg")
-
-                #av = agent.getPopulationData(); # this returns a DeviceAgentVector 
-                #for ai in av:
-                   #x = ai.getVariableFloat("x")
-                   #print(x)
+                # reaction forces, thus, opposite to agent-applied forces
+                sum_bx_pos = -agent.sumFloat("f_bx_pos") 
+                sum_bx_neg = -agent.sumFloat("f_bx_neg")
+                sum_by_pos = -agent.sumFloat("f_by_pos")
+                sum_by_neg = -agent.sumFloat("f_by_neg")
+                sum_bz_pos = -agent.sumFloat("f_bz_pos")
+                sum_bz_neg = -agent.sumFloat("f_bz_neg")
+                coords = list()                
+                velocity = list()
+                force = list()
+                elastic_energy = list()
+                av = agent.getPopulationData(); # this returns a DeviceAgentVector 
+                for ai in av:
+                   coords_ai = (ai.getVariableFloat("x"),ai.getVariableFloat("y"),ai.getVariableFloat("z"))
+                   velocity_ai = (ai.getVariableFloat("vx"),ai.getVariableFloat("vy"),ai.getVariableFloat("vz"))
+                   force_ai = (ai.getVariableFloat("fx"),ai.getVariableFloat("fy"),ai.getVariableFloat("fz"))
+                   coords.append(coords_ai)
+                   velocity.append(velocity_ai)
+                   force.append(force_ai)
+                   elastic_energy.append(ai.getVariableFloat("elastic_energy"))
                 print ("====== SAVING DATA FROM Step {:03d} TO FILE ======".format(stepCounter))
                 with open(str(file_path), 'w') as file:
                     for line in self.header:
+                        file.write(line  + '\n')                    
+                    file.write("{} {} {} \n".format(BOUNDARY_COORDS[0],BOUNDARY_COORDS[2],BOUNDARY_COORDS[4]))
+                    file.write("{} {} {} \n".format(BOUNDARY_COORDS[1],BOUNDARY_COORDS[2],BOUNDARY_COORDS[4]))
+                    file.write("{} {} {} \n".format(BOUNDARY_COORDS[1],BOUNDARY_COORDS[3],BOUNDARY_COORDS[4]))
+                    file.write("{} {} {} \n".format(BOUNDARY_COORDS[0],BOUNDARY_COORDS[3],BOUNDARY_COORDS[4]))
+                    file.write("{} {} {} \n".format(BOUNDARY_COORDS[0],BOUNDARY_COORDS[2],BOUNDARY_COORDS[5]))
+                    file.write("{} {} {} \n".format(BOUNDARY_COORDS[1],BOUNDARY_COORDS[2],BOUNDARY_COORDS[5]))
+                    file.write("{} {} {} \n".format(BOUNDARY_COORDS[1],BOUNDARY_COORDS[3],BOUNDARY_COORDS[5]))
+                    file.write("{} {} {} \n".format(BOUNDARY_COORDS[0],BOUNDARY_COORDS[3],BOUNDARY_COORDS[5]))
+                    for coords_ai in coords:
+                        file.write("{} {} {} \n".format(coords_ai[0],coords_ai[1],coords_ai[2]))
+                    for line in self.domaindata: 
                         file.write(line  + '\n')
-                    # TODO PRINT POINT DATA
-                    for line in self.domaindata:
-                        file.write(line  + '\n')
+                    file.write("SCALARS boundary_forces float 1" + '\n')
+                    file.write("LOOKUP_TABLE default" + '\n')
+                    file.write(str(sum_bx_pos) + '\n')
+                    file.write(str(sum_bx_neg) + '\n')
+                    file.write(str(sum_by_pos) + '\n')
+                    file.write(str(sum_by_neg) + '\n')
+                    file.write(str(sum_bz_pos) + '\n')
+                    file.write(str(sum_bz_neg) + '\n')
+                    file.write("SCALARS boundary_force_scaling float 1" + '\n')
+                    file.write("LOOKUP_TABLE default" + '\n')
+                    file.write(str(abs(sum_bx_pos)) + '\n')
+                    file.write(str(abs(sum_bx_neg)) + '\n')
+                    file.write(str(abs(sum_by_pos)) + '\n')
+                    file.write(str(abs(sum_by_neg)) + '\n')
+                    file.write(str(abs(sum_bz_pos)) + '\n')
+                    file.write(str(abs(sum_bz_neg)) + '\n')
+                    file.write("VECTORS boundary_force_dir float" + '\n')
+                    file.write("1 0 0 \n" if sum_bx_pos > 0 else "-1 0 0 \n")
+                    file.write("1 0 0 \n" if sum_bx_neg > 0 else "-1 0 0 \n")
+                    file.write("0 1 0 \n" if sum_by_pos > 0 else "0 -1 0 \n")
+                    file.write("0 1 0 \n" if sum_by_neg > 0 else "0 -1 0 \n")
+                    file.write("0 0 1 \n" if sum_bz_pos > 0 else "0 0 -1 \n")
+                    file.write("0 0 1 \n" if sum_bz_neg > 0 else "0 0 -1 \n")
+                    # TODO PRINT ECM POINT DATA
+                    file.write("POINT_DATA {}".format(8 + N*N*N)) #8 corners + number of ECM agents 
+                    file.write("SCALARS elastic_energy float 1" + '\n')
+                    file.write("LOOKUP_TABLE default" + '\n')
+                    for i in range(8):
+                        file.write("0.0 \n") # boundray corners
+                    for ee_ai in elastic_energy:
+                        file.write("{:.4f} \n".format(ee_ai))
+                    file.write("VECTORS velocity float" + '\n')  
+                    for i in range(8):
+                        file.write("0.0 0.0 0.0 \n") # boundray corners
+                    for v_ai in velocity:
+                        file.write("{:.4f} {:.4f} {:.4f} \n".format(v_ai[0],v_ai[1],v_ai[2]))
+                    file.write("VECTORS force float" + '\n')  
+                    for i in range(8):
+                        file.write("0.0 0.0 0.0 \n") # boundray corners
+                    for f_ai in force:
+                        file.write("{:.4f} {:.4f} {:.4f} \n".format(f_ai[0],f_ai[1],f_ai[2]))
+
                 print ("... succesful save ")
                 print ("=================================")
 
@@ -596,7 +650,6 @@ if pyflamegpu.VISUALISATION and VISUALISATION and not ENSEMBLE:
     circ_ecm_agt.setColor(pyflamegpu.GREEN);
     #circ_ecm_agt.setColor(pyflamegpu.ViridisInterpolation("y", -1.0, 1.0));
     #circ_ecm_agt.setColor(pyflamegpu.HSVInterpolation("y", 0.0, 360.0));
-    # TODO: add variable force to plot colors
     f_max = ECM_K_ELAST * (ECM_ECM_EQUILIBRIUM_DISTANCE);
     max_energy = 0.5 * (f_max * f_max ) / ECM_K_ELAST;
     print("max force, max energy: ", f_max, max_energy);
