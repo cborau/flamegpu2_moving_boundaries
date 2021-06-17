@@ -11,28 +11,27 @@ sns.set()
 # Set whether to run single model or ensemble, agent population size, and simulation steps 
 ENSEMBLE = False;
 ENSEMBLE_RUNS = 0;
-N = 10;
+N = 4;
 ECM_AGENTS_PER_DIR = [N , N, N];
 ECM_POPULATION_SIZE = ECM_AGENTS_PER_DIR[0] * ECM_AGENTS_PER_DIR[1] * ECM_AGENTS_PER_DIR[2]; 
-STEPS = 400;
+STEPS = 200;
 # Change to false if pyflamegpu has not been built with visualisation support
 VISUALISATION = True;
 DEBUG_PRINTING = False;
 PAUSE_EVERY_STEP = False;
-SAVE_DATA_TO_FILE = True;
+SAVE_DATA_TO_FILE = False;
 SAVE_EVERY_N_STEPS = 10;
-CURR_PATH = pathlib.Path().absolute();
-RES_PATH = CURR_PATH / 'result_files';
-RES_PATH.mkdir(parents=True, exist_ok=True);
-
-print("Executing in ", CURR_PATH)
 
 # Interaction and mechanical parameters
 TIME_STEP = 0.05; # seconds
 BOUNDARY_COORDS = [0.5, -0.5, 0.5, -0.5, 0.5, -0.5]; #+X,-X,+Y,-Y,+Z,-Z
 BOUNDARY_DISP_RATES = [0.0, 0.0, -0.025, 0.0, 0.0, 0.0]; # units/second
-CLAMP_AGENT_TOUCHING_BOUNDARY = [0, 0, 1, 1, 0, 0]; #+X,-X,+Y,-Y,+Z,-Z
-ALLOW_AGENT_SLIDING = [1, 1, 0, 1, 1, 1]; #+X,-X,+Y,-Y,+Z,-Z
+ALLOW_BOUNDARY_ELASTIC_MOVEMENT = [1, 1, 0, 0, 1, 1]; # [bool]
+RELATIVE_BOUNDARY_STIFFNESS = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]; 
+BOUNDARY_STIFFNESS_VALUE = 100 # N/units
+BOUNDARY_STIFFNESS = [BOUNDARY_STIFFNESS_VALUE*x for x in RELATIVE_BOUNDARY_STIFFNESS]
+CLAMP_AGENT_TOUCHING_BOUNDARY = [1, 1, 1, 1, 1, 1]; #+X,-X,+Y,-Y,+Z,-Z [bool]
+ALLOW_AGENT_SLIDING = [1, 1, 0, 1, 1, 1]; #+X,-X,+Y,-Y,+Z,-Z [bool]
 #ECM_ECM_INTERACTION_RADIUS = 100;
 #ECM_ECM_EQUILIBRIUM_DISTANCE = 0.45;
 ECM_ECM_EQUILIBRIUM_DISTANCE = (BOUNDARY_COORDS[0] - BOUNDARY_COORDS[1])  / (N - 1);
@@ -45,10 +44,14 @@ ECM_D_DUMPING = 1.0;
 ECM_MASS = 1.0;
 
 
-
 #MAX_SEARCH_RADIUS = max([ECM_ECM_INTERACTION_RADIUS, ECM_BOUNDARY_INTERACTION_RADIUS]);
 MAX_SEARCH_RADIUS = 2.0; # this strongly affects the number of bins and therefore the memory allocated for simulations (more bins -> more memory -> faster (in theory))
+EPSILON = 0.0000000001;
 
+CURR_PATH = pathlib.Path().absolute();
+RES_PATH = CURR_PATH / 'result_files';
+RES_PATH.mkdir(parents=True, exist_ok=True);
+print("Executing in ", CURR_PATH)
 
 # Other simulation parameters:
 MAX_EXPECTED_BOUNDARY_POS = max(BOUNDARY_DISP_RATES) * STEPS * TIME_STEP + 1.0;
@@ -397,14 +400,13 @@ class MoveBoundaries(pyflamegpu.HostFunctionCallback):
      # Override C++ method: virtual void run(FLAMEGPU_HOST_API*);
      def run(self, FLAMEGPU):
          global stepCounter
-         global BOUNDARY_COORDS, BOUNDARY_DISP_RATES, TIME_STEP
-         global DEBUG_PRINTING, PAUSE_EVERY_STEP
+         global BOUNDARY_COORDS, BOUNDARY_DISP_RATES, ALLOW_BOUNDARY_ELASTIC_MOVEMENT, BOUNDARY_STIFFNESS
+         global DEBUG_PRINTING, PAUSE_EVERY_STEP, TIME_STEP
          
          if PAUSE_EVERY_STEP:
              input() # pause everystep
          
-         if any(dr > 0.0 or dr < 0.0 for dr in BOUNDARY_DISP_RATES):
-            
+         if any(dr > 0.0 or dr < 0.0 for dr in BOUNDARY_DISP_RATES):            
             #coord_boundary = FLAMEGPU.environment.getPropertyArrayFloat("COORDS_BOUNDARIES")
             for i in range(6):                
                 BOUNDARY_COORDS[i] += (BOUNDARY_DISP_RATES[i] * TIME_STEP)
@@ -412,12 +414,33 @@ class MoveBoundaries(pyflamegpu.HostFunctionCallback):
             bcs = [BOUNDARY_COORDS[0], BOUNDARY_COORDS[1], BOUNDARY_COORDS[2], BOUNDARY_COORDS[3], BOUNDARY_COORDS[4], BOUNDARY_COORDS[5]]  #+X,-X,+Y,-Y,+Z,-Z
             FLAMEGPU.environment.setPropertyArrayFloat("COORDS_BOUNDARIES", bcs)
             if (stepCounter > 0):
-                print ("====== MOVING BOUNDARIES ======") 
-                print ("End of step: ", stepCounter)
+                print ("====== MOVING BOUNDARIES DUE TO CONDITIONS ======")                 
                 print ("New boundary positions [+X,-X,+Y,-Y,+Z,-Z]: ", BOUNDARY_COORDS)
-                print ("===============================")
-                
+                print ("=================================================")
+
+         if any(abem > 0.0 for abem in ALLOW_BOUNDARY_ELASTIC_MOVEMENT):
+            print ("====== MOVING BOUNDARIES DUE TO FORCES ======") 
+            agent = FLAMEGPU.agent("ECM")        
+            sum_bx_pos = agent.sumFloat("f_bx_pos")
+            sum_bx_neg = agent.sumFloat("f_bx_neg")
+            sum_by_pos = agent.sumFloat("f_by_pos")
+            sum_by_neg = agent.sumFloat("f_by_neg")
+            sum_bz_pos = agent.sumFloat("f_bz_pos")
+            sum_bz_neg = agent.sumFloat("f_bz_neg")
+            print ("Total forces [+X,-X,+Y,-Y,+Z,-Z]: ", sum_bx_pos, sum_bx_neg, sum_by_pos, sum_by_neg, sum_bz_pos, sum_bz_neg)
+            boundary_forces = [sum_bx_pos, sum_bx_neg, sum_by_pos, sum_by_neg, sum_bz_pos, sum_bz_neg];            
+            for i in range(6):  
+                if BOUNDARY_DISP_RATES[i] < EPSILON and BOUNDARY_DISP_RATES[i] > -EPSILON and ALLOW_BOUNDARY_ELASTIC_MOVEMENT[i]:
+                    u = boundary_forces[i] / BOUNDARY_STIFFNESS[i]
+                    print ("Displacement for boundary {} = {}".format(i,u));
+                    BOUNDARY_COORDS[i] += u
             
+            bcs = [BOUNDARY_COORDS[0], BOUNDARY_COORDS[1], BOUNDARY_COORDS[2], BOUNDARY_COORDS[3], BOUNDARY_COORDS[4], BOUNDARY_COORDS[5]]  #+X,-X,+Y,-Y,+Z,-Z
+            FLAMEGPU.environment.setPropertyArrayFloat("COORDS_BOUNDARIES", bcs)
+            print ("New boundary positions [+X,-X,+Y,-Y,+Z,-Z]: ", BOUNDARY_COORDS)
+            print ("=================================================")
+         
+         print ("End of step: ", stepCounter)
          stepCounter += 1
 
 class SumBoundaryForces(pyflamegpu.HostFunctionCallback):
@@ -542,7 +565,6 @@ class SaveDataToFile(pyflamegpu.HostFunctionCallback):
                     file.write("0 1 0 \n" if sum_by_neg > 0 else "0 -1 0 \n")
                     file.write("0 0 1 \n" if sum_bz_pos > 0 else "0 0 -1 \n")
                     file.write("0 0 1 \n" if sum_bz_neg > 0 else "0 0 -1 \n")
-                    # TODO PRINT ECM POINT DATA
                     file.write("POINT_DATA {}".format(8 + N*N*N)) #8 corners + number of ECM agents 
                     file.write("SCALARS elastic_energy float 1" + '\n')
                     file.write("LOOKUP_TABLE default" + '\n')
@@ -567,8 +589,8 @@ class SaveDataToFile(pyflamegpu.HostFunctionCallback):
 sdf = SaveDataToFile()
 model.addStepFunctionCallback(sdf)
 
-sbf = SumBoundaryForces()
-model.addStepFunctionCallback(sbf)
+#sbf = SumBoundaryForces()
+#model.addStepFunctionCallback(sbf)
 
 mb = MoveBoundaries()
 model.addStepFunctionCallback(mb)
