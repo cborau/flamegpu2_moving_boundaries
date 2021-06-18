@@ -14,7 +14,6 @@ ENSEMBLE_RUNS = 0;
 N = 4;
 ECM_AGENTS_PER_DIR = [N , N, N];
 ECM_POPULATION_SIZE = ECM_AGENTS_PER_DIR[0] * ECM_AGENTS_PER_DIR[1] * ECM_AGENTS_PER_DIR[2]; 
-STEPS = 200;
 # Change to false if pyflamegpu has not been built with visualisation support
 VISUALISATION = True;
 DEBUG_PRINTING = False;
@@ -24,12 +23,15 @@ SAVE_EVERY_N_STEPS = 10;
 
 # Interaction and mechanical parameters
 TIME_STEP = 0.05; # seconds
+STEPS = 300;
 BOUNDARY_COORDS = [0.5, -0.5, 0.5, -0.5, 0.5, -0.5]; #+X,-X,+Y,-Y,+Z,-Z
 BOUNDARY_DISP_RATES = [0.0, 0.0, -0.025, 0.0, 0.0, 0.0]; # units/second
 ALLOW_BOUNDARY_ELASTIC_MOVEMENT = [1, 1, 0, 0, 1, 1]; # [bool]
 RELATIVE_BOUNDARY_STIFFNESS = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]; 
-BOUNDARY_STIFFNESS_VALUE = 100 # N/units
+BOUNDARY_STIFFNESS_VALUE = 2000 # N/units
+BOUNDARY_DUMPING_VALUE = 10
 BOUNDARY_STIFFNESS = [BOUNDARY_STIFFNESS_VALUE*x for x in RELATIVE_BOUNDARY_STIFFNESS]
+BOUNDARY_DUMPING = [BOUNDARY_DUMPING_VALUE*x for x in RELATIVE_BOUNDARY_STIFFNESS]
 CLAMP_AGENT_TOUCHING_BOUNDARY = [1, 1, 1, 1, 1, 1]; #+X,-X,+Y,-Y,+Z,-Z [bool]
 ALLOW_AGENT_SLIDING = [1, 1, 0, 1, 1, 1]; #+X,-X,+Y,-Y,+Z,-Z [bool]
 #ECM_ECM_INTERACTION_RADIUS = 100;
@@ -400,7 +402,7 @@ class MoveBoundaries(pyflamegpu.HostFunctionCallback):
      # Override C++ method: virtual void run(FLAMEGPU_HOST_API*);
      def run(self, FLAMEGPU):
          global stepCounter
-         global BOUNDARY_COORDS, BOUNDARY_DISP_RATES, ALLOW_BOUNDARY_ELASTIC_MOVEMENT, BOUNDARY_STIFFNESS
+         global BOUNDARY_COORDS, BOUNDARY_DISP_RATES, ALLOW_BOUNDARY_ELASTIC_MOVEMENT, BOUNDARY_STIFFNESS, BOUNDARY_DUMPING
          global DEBUG_PRINTING, PAUSE_EVERY_STEP, TIME_STEP
          
          if PAUSE_EVERY_STEP:
@@ -431,7 +433,8 @@ class MoveBoundaries(pyflamegpu.HostFunctionCallback):
             boundary_forces = [sum_bx_pos, sum_bx_neg, sum_by_pos, sum_by_neg, sum_bz_pos, sum_bz_neg];            
             for i in range(6):  
                 if BOUNDARY_DISP_RATES[i] < EPSILON and BOUNDARY_DISP_RATES[i] > -EPSILON and ALLOW_BOUNDARY_ELASTIC_MOVEMENT[i]:
-                    u = boundary_forces[i] / BOUNDARY_STIFFNESS[i]
+                    #u = boundary_forces[i] / BOUNDARY_STIFFNESS[i]
+                    u = (boundary_forces[i] * TIME_STEP)/ (BOUNDARY_STIFFNESS[i] * TIME_STEP + BOUNDARY_DUMPING[i])
                     print ("Displacement for boundary {} = {}".format(i,u));
                     BOUNDARY_COORDS[i] += u
             
