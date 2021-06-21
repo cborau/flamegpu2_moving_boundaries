@@ -2,16 +2,18 @@ from pyflamegpu import *
 import sys, random, math
 import seaborn as sns
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import pathlib
+from dataclasses import make_dataclass
 
 sns.set()
 
 # Set whether to run single model or ensemble, agent population size, and simulation steps 
 ENSEMBLE = False;
 ENSEMBLE_RUNS = 0;
-N = 4;
+N = 10;
 ECM_AGENTS_PER_DIR = [N , N, N];
 ECM_POPULATION_SIZE = ECM_AGENTS_PER_DIR[0] * ECM_AGENTS_PER_DIR[1] * ECM_AGENTS_PER_DIR[2]; 
 # Change to false if pyflamegpu has not been built with visualisation support
@@ -26,10 +28,10 @@ TIME_STEP = 0.05; # seconds
 STEPS = 300;
 BOUNDARY_COORDS = [0.5, -0.5, 0.5, -0.5, 0.5, -0.5]; #+X,-X,+Y,-Y,+Z,-Z
 BOUNDARY_DISP_RATES = [0.0, 0.0, -0.025, 0.0, 0.0, 0.0]; # units/second
-ALLOW_BOUNDARY_ELASTIC_MOVEMENT = [1, 1, 0, 0, 1, 1]; # [bool]
+ALLOW_BOUNDARY_ELASTIC_MOVEMENT = [0, 0, 0, 0, 0, 0]; # [bool]
 RELATIVE_BOUNDARY_STIFFNESS = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]; 
-BOUNDARY_STIFFNESS_VALUE = 2000 # N/units
-BOUNDARY_DUMPING_VALUE = 10
+BOUNDARY_STIFFNESS_VALUE = 1000 # N/units
+BOUNDARY_DUMPING_VALUE = 0
 BOUNDARY_STIFFNESS = [BOUNDARY_STIFFNESS_VALUE*x for x in RELATIVE_BOUNDARY_STIFFNESS]
 BOUNDARY_DUMPING = [BOUNDARY_DUMPING_VALUE*x for x in RELATIVE_BOUNDARY_STIFFNESS]
 CLAMP_AGENT_TOUCHING_BOUNDARY = [1, 1, 1, 1, 1, 1]; #+X,-X,+Y,-Y,+Z,-Z [bool]
@@ -58,6 +60,11 @@ print("Executing in ", CURR_PATH)
 # Other simulation parameters:
 MAX_EXPECTED_BOUNDARY_POS = max(BOUNDARY_DISP_RATES) * STEPS * TIME_STEP + 1.0;
 MIN_EXPECTED_BOUNDARY_POS = min(BOUNDARY_DISP_RATES) * STEPS * TIME_STEP - 1.0;
+
+BPOS = make_dataclass("BPOS", [("xpos", float), ("xneg", float), ("ypos", float), ("yneg", float), ("zpos", float), ("zneg", float)])
+
+# Use a dataframe to store boundary positions over time
+BPOS_OVER_TIME = pd.DataFrame([BPOS(BOUNDARY_COORDS[0], BOUNDARY_COORDS[1], BOUNDARY_COORDS[2], BOUNDARY_COORDS[3], BOUNDARY_COORDS[4], BOUNDARY_COORDS[5])])
 
 print("Max expected boundary position: ", MAX_EXPECTED_BOUNDARY_POS);
 print("Min expected boundary position: ", MIN_EXPECTED_BOUNDARY_POS);
@@ -379,10 +386,7 @@ class initAgentPopulations(pyflamegpu.HostFunctionCallback):
 # Add function callback to INIT functions for population generation
 initialAgentPopulation = initAgentPopulations();
 model.addInitFunctionCallback(initialAgentPopulation);
-#initialBondaryCornerPopulation = initBoundaryCorners();
-#model.addInitFunctionCallback(initialBondaryCornerPopulation);
-#initialECMPopulation = initECMPopulation();
-#model.addInitFunctionCallback(initialECMPopulation);
+
 
 """
   STEP FUNCTIONS
@@ -402,13 +406,15 @@ class MoveBoundaries(pyflamegpu.HostFunctionCallback):
      # Override C++ method: virtual void run(FLAMEGPU_HOST_API*);
      def run(self, FLAMEGPU):
          global stepCounter
-         global BOUNDARY_COORDS, BOUNDARY_DISP_RATES, ALLOW_BOUNDARY_ELASTIC_MOVEMENT, BOUNDARY_STIFFNESS, BOUNDARY_DUMPING
+         global BOUNDARY_COORDS, BOUNDARY_DISP_RATES, ALLOW_BOUNDARY_ELASTIC_MOVEMENT, BOUNDARY_STIFFNESS, BOUNDARY_DUMPING, BPOS_OVER_TIME
          global DEBUG_PRINTING, PAUSE_EVERY_STEP, TIME_STEP
          
+         boundaries_moved = False
          if PAUSE_EVERY_STEP:
              input() # pause everystep
          
-         if any(dr > 0.0 or dr < 0.0 for dr in BOUNDARY_DISP_RATES):            
+         if any(dr > 0.0 or dr < 0.0 for dr in BOUNDARY_DISP_RATES):    
+            boundaries_moved = True 
             #coord_boundary = FLAMEGPU.environment.getPropertyArrayFloat("COORDS_BOUNDARIES")
             for i in range(6):                
                 BOUNDARY_COORDS[i] += (BOUNDARY_DISP_RATES[i] * TIME_STEP)
@@ -421,6 +427,7 @@ class MoveBoundaries(pyflamegpu.HostFunctionCallback):
                 print ("=================================================")
 
          if any(abem > 0.0 for abem in ALLOW_BOUNDARY_ELASTIC_MOVEMENT):
+            boundaries_moved = True
             print ("====== MOVING BOUNDARIES DUE TO FORCES ======") 
             agent = FLAMEGPU.agent("ECM")        
             sum_bx_pos = agent.sumFloat("f_bx_pos")
@@ -443,25 +450,15 @@ class MoveBoundaries(pyflamegpu.HostFunctionCallback):
             print ("New boundary positions [+X,-X,+Y,-Y,+Z,-Z]: ", BOUNDARY_COORDS)
             print ("=================================================")
          
+         if boundaries_moved:
+             new_pos = pd.DataFrame([BPOS(BOUNDARY_COORDS[0], BOUNDARY_COORDS[1], BOUNDARY_COORDS[2], BOUNDARY_COORDS[3], BOUNDARY_COORDS[4], BOUNDARY_COORDS[5])])
+             BPOS_OVER_TIME = BPOS_OVER_TIME.append(new_pos, ignore_index=True)
+
+
+
          print ("End of step: ", stepCounter)
          stepCounter += 1
 
-class SumBoundaryForces(pyflamegpu.HostFunctionCallback):
-    def __init__(self):
-        super().__init__()
-
-    def run(self, FLAMEGPU):
-        agent = FLAMEGPU.agent("ECM")        
-        sum_bx_pos = agent.sumFloat("f_bx_pos")
-        sum_bx_neg = agent.sumFloat("f_bx_neg")
-        sum_by_pos = agent.sumFloat("f_by_pos")
-        sum_by_neg = agent.sumFloat("f_by_neg")
-        sum_bz_pos = agent.sumFloat("f_bz_pos")
-        sum_bz_neg = agent.sumFloat("f_bz_neg")
-        print ("====== FORCE ON BOUNDARIES ======")
-        print ("Total forces [+X,-X,+Y,-Y,+Z,-Z]: ", sum_bx_pos, sum_bx_neg, sum_by_pos, sum_by_neg, sum_bz_pos, sum_bz_neg)
-        print ("=================================")
-        # TODO: IMPLEMENT BOUNDARY MOVEMENT DUE TO THE FORCES
 
 class SaveDataToFile(pyflamegpu.HostFunctionCallback):
     def __init__(self):
@@ -592,9 +589,6 @@ class SaveDataToFile(pyflamegpu.HostFunctionCallback):
 sdf = SaveDataToFile()
 model.addStepFunctionCallback(sdf)
 
-#sbf = SumBoundaryForces()
-#model.addStepFunctionCallback(sbf)
-
 mb = MoveBoundaries()
 model.addStepFunctionCallback(mb)
 
@@ -622,12 +616,25 @@ logging_config = pyflamegpu.LoggingConfig(model);
 logging_config.logEnvironment("CURRENT_ID");
 ecm_agent_log = logging_config.agent("ECM");
 ecm_agent_log.logCount();
-ecm_agent_log.logMeanFloat("fx");
-ecm_agent_log.logMeanFloat("fy");
-ecm_agent_log.logMeanFloat("fz");
-ecm_agent_log.logStandardDevFloat("fx");
-ecm_agent_log.logStandardDevFloat("fy");
-ecm_agent_log.logStandardDevFloat("fz");
+ecm_agent_log.logSumFloat("f_bx_pos");
+ecm_agent_log.logSumFloat("f_bx_neg");
+ecm_agent_log.logSumFloat("f_by_pos");
+ecm_agent_log.logSumFloat("f_by_neg");
+ecm_agent_log.logSumFloat("f_bz_pos");
+ecm_agent_log.logSumFloat("f_bz_neg");
+ecm_agent_log.logMeanFloat("f_bx_pos");
+ecm_agent_log.logMeanFloat("f_bx_neg");
+ecm_agent_log.logMeanFloat("f_by_pos");
+ecm_agent_log.logMeanFloat("f_by_neg");
+ecm_agent_log.logMeanFloat("f_bz_pos");
+ecm_agent_log.logMeanFloat("f_bz_neg");
+ecm_agent_log.logStandardDevFloat("f_bx_pos");
+ecm_agent_log.logStandardDevFloat("f_bx_neg");
+ecm_agent_log.logStandardDevFloat("f_by_pos");
+ecm_agent_log.logStandardDevFloat("f_by_neg");
+ecm_agent_log.logStandardDevFloat("f_bz_pos");
+ecm_agent_log.logStandardDevFloat("f_bz_neg");
+
 step_log = pyflamegpu.StepLoggingConfig(logging_config);
 step_log.setFrequency(1);
 
@@ -838,16 +845,48 @@ if ENSEMBLE:
     # ax.legend();
     # plt.savefig(fname,format='png');
     # plt.close(fig);
+
 else:
     steps = logs.getStepLog();
     ecm_agent_counts = [None]*len(steps)
+    BFORCE = make_dataclass("BFORCE", [("fxpos", float), ("fxneg", float), ("fypos", float), ("fyneg", float), ("fzpos", float), ("fzneg", float)])
+    
     counter = 0;
     for step in steps:
+        if counter == 0:
+            BFORCE_OVER_TIME = pd.DataFrame([BFORCE(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)])
         stepcount = step.getStepCount();
         ecm_agents = step.getAgent("ECM");
         ecm_agent_counts[counter] = ecm_agents.getCount();
+        f_bx_pos = ecm_agents.getSumFloat("f_bx_pos")
+        f_bx_neg = ecm_agents.getSumFloat("f_bx_neg")
+        f_by_pos = ecm_agents.getSumFloat("f_by_pos")
+        f_by_neg = ecm_agents.getSumFloat("f_by_neg")
+        f_bz_pos = ecm_agents.getSumFloat("f_bz_pos")
+        f_bz_neg = ecm_agents.getSumFloat("f_bz_neg")
+        step_bforce = pd.DataFrame([BFORCE(f_bx_pos, f_bx_neg, f_by_pos, f_by_neg, f_bz_pos, f_bz_neg)])
+        BFORCE_OVER_TIME = BFORCE_OVER_TIME.append(step_bforce, ignore_index=True)
         counter+=1;
     print()
-    print("Agent counts per step")
+    print("============================")
+    print("BOUNDARY POSITIONS OVER TIME")
+    print(BPOS_OVER_TIME)
+    print()
+    print("============================")
+    print("BOUNDARY FORCES OVER TIME")
+    print(BFORCE_OVER_TIME)
+    # Plotting
+    fig,ax=plt.subplots(1,2)
+    #BPOS_OVER_TIME.plot()
+
+    BPOS_OVER_TIME.plot(ax = ax[0])
+    #ax = df['size'].plot(secondary_y=True, color='k', marker='o')
+    ax[0].set_xlabel('time step')
+    ax[0].set_ylabel('pos')
+    BFORCE_OVER_TIME.plot(ax = ax[1])
+    ax[1].set_ylabel('force')
+    ax[1].set_xlabel('time step')
+
+    plt.show()
     #for j in range(len(steps)):
     #  print("step",j,"ECM",ecm_agent_counts[j]) 
