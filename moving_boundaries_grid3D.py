@@ -25,17 +25,18 @@ SAVE_EVERY_N_STEPS = 10;
 
 # Interaction and mechanical parameters
 TIME_STEP = 0.05; # seconds
-STEPS = 300;
+STEPS = 400;
 BOUNDARY_COORDS = [0.5, -0.5, 0.5, -0.5, 0.5, -0.5]; #+X,-X,+Y,-Y,+Z,-Z
-BOUNDARY_DISP_RATES = [0.0, 0.0, -0.025, 0.0, 0.0, 0.0]; # units/second
+BOUNDARY_DISP_RATES = [0.0, 0.0, 0.01, -0.01, 0.0, 0.0]; # units/second
+POISSON_DIRS = [0, 1] # 0: xdir, 1:ydir, 2:zdir. poisson_ratio ~= -incL(dir1)/incL(dir2); dir2 is the direction in which the load is applied
 ALLOW_BOUNDARY_ELASTIC_MOVEMENT = [0, 0, 0, 0, 0, 0]; # [bool]
-RELATIVE_BOUNDARY_STIFFNESS = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]; 
-BOUNDARY_STIFFNESS_VALUE = 1000 # N/units
+RELATIVE_BOUNDARY_STIFFNESS = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0];  #TODO: FIX POISSON RATIO CALC
+BOUNDARY_STIFFNESS_VALUE = 1 # N/units
 BOUNDARY_DUMPING_VALUE = 0
 BOUNDARY_STIFFNESS = [BOUNDARY_STIFFNESS_VALUE*x for x in RELATIVE_BOUNDARY_STIFFNESS]
 BOUNDARY_DUMPING = [BOUNDARY_DUMPING_VALUE*x for x in RELATIVE_BOUNDARY_STIFFNESS]
-CLAMP_AGENT_TOUCHING_BOUNDARY = [1, 1, 1, 1, 1, 1]; #+X,-X,+Y,-Y,+Z,-Z [bool]
-ALLOW_AGENT_SLIDING = [1, 1, 0, 1, 1, 1]; #+X,-X,+Y,-Y,+Z,-Z [bool]
+CLAMP_AGENT_TOUCHING_BOUNDARY = [0, 0, 1, 1, 0, 0]; #+X,-X,+Y,-Y,+Z,-Z [bool]
+ALLOW_AGENT_SLIDING = [1, 1, 1, 1, 1, 1]; #+X,-X,+Y,-Y,+Z,-Z [bool]
 #ECM_ECM_INTERACTION_RADIUS = 100;
 #ECM_ECM_EQUILIBRIUM_DISTANCE = 0.45;
 ECM_ECM_EQUILIBRIUM_DISTANCE = (BOUNDARY_COORDS[0] - BOUNDARY_COORDS[1])  / (N - 1);
@@ -43,7 +44,7 @@ print("ECM_ECM_EQUILIBRIUM_DISTANCE: ", ECM_ECM_EQUILIBRIUM_DISTANCE)
 ECM_BOUNDARY_INTERACTION_RADIUS = 0.05;
 ECM_BOUNDARY_EQUILIBRIUM_DISTANCE = 0.0;
 
-ECM_K_ELAST = 1.0;
+ECM_K_ELAST = 2.0;
 ECM_D_DUMPING = 1.0;
 ECM_MASS = 1.0;
 
@@ -65,6 +66,15 @@ BPOS = make_dataclass("BPOS", [("xpos", float), ("xneg", float), ("ypos", float)
 
 # Use a dataframe to store boundary positions over time
 BPOS_OVER_TIME = pd.DataFrame([BPOS(BOUNDARY_COORDS[0], BOUNDARY_COORDS[1], BOUNDARY_COORDS[2], BOUNDARY_COORDS[3], BOUNDARY_COORDS[4], BOUNDARY_COORDS[5])])
+
+# Some checkings
+msg_poisson = "WARNING: poisson ratio directions are not well defined or might not have sense due to boundary conditions \n"
+if (BOUNDARY_DISP_RATES[0] != 0.0 or BOUNDARY_DISP_RATES[1] != 0.0) and POISSON_DIRS[1] != 0:
+    print(msg_poisson)
+if (BOUNDARY_DISP_RATES[2] != 0.0 or BOUNDARY_DISP_RATES[3] != 0.0) and POISSON_DIRS[1] != 1:
+    print(msg_poisson)
+if (BOUNDARY_DISP_RATES[4] != 0.0 or BOUNDARY_DISP_RATES[5] != 0.0) and POISSON_DIRS[1] != 2:
+    print(msg_poisson)
 
 print("Max expected boundary position: ", MAX_EXPECTED_BOUNDARY_POS);
 print("Min expected boundary position: ", MIN_EXPECTED_BOUNDARY_POS);
@@ -407,11 +417,33 @@ class MoveBoundaries(pyflamegpu.HostFunctionCallback):
      def run(self, FLAMEGPU):
          global stepCounter
          global BOUNDARY_COORDS, BOUNDARY_DISP_RATES, ALLOW_BOUNDARY_ELASTIC_MOVEMENT, BOUNDARY_STIFFNESS, BOUNDARY_DUMPING, BPOS_OVER_TIME
+         global CLAMP_AGENT_TOUCHING_BOUNDARY
          global DEBUG_PRINTING, PAUSE_EVERY_STEP, TIME_STEP
          
          boundaries_moved = False
          if PAUSE_EVERY_STEP:
              input() # pause everystep
+
+         if any(catb < 1 for catb in CLAMP_AGENT_TOUCHING_BOUNDARY):
+             boundaries_moved = True
+             agent = FLAMEGPU.agent("ECM")
+             minmaxPositions = list()
+             minmaxPositions.append(agent.maxFloat("x"))
+             minmaxPositions.append(agent.minFloat("x"))
+             minmaxPositions.append(agent.maxFloat("y"))
+             minmaxPositions.append(agent.minFloat("y"))
+             minmaxPositions.append(agent.maxFloat("z"))
+             minmaxPositions.append(agent.minFloat("z"))
+             for i in range(6): 
+                if CLAMP_AGENT_TOUCHING_BOUNDARY[i] < 1: BOUNDARY_COORDS[i] = minmaxPositions[i]
+                
+             bcs = [BOUNDARY_COORDS[0], BOUNDARY_COORDS[1], BOUNDARY_COORDS[2], BOUNDARY_COORDS[3], BOUNDARY_COORDS[4], BOUNDARY_COORDS[5]]  #+X,-X,+Y,-Y,+Z,-Z
+             FLAMEGPU.environment.setPropertyArrayFloat("COORDS_BOUNDARIES", bcs)        
+                    
+             if (stepCounter > 0):
+                print ("====== MOVING FREE BOUNDARIES  ======")                 
+                print ("New boundary positions [+X,-X,+Y,-Y,+Z,-Z]: ", BOUNDARY_COORDS)
+                print ("=====================================")
          
          if any(dr > 0.0 or dr < 0.0 for dr in BOUNDARY_DISP_RATES):    
             boundaries_moved = True 
@@ -426,7 +458,7 @@ class MoveBoundaries(pyflamegpu.HostFunctionCallback):
                 print ("New boundary positions [+X,-X,+Y,-Y,+Z,-Z]: ", BOUNDARY_COORDS)
                 print ("=================================================")
 
-         if any(abem > 0.0 for abem in ALLOW_BOUNDARY_ELASTIC_MOVEMENT):
+         if any(abem > 0 for abem in ALLOW_BOUNDARY_ELASTIC_MOVEMENT):
             boundaries_moved = True
             print ("====== MOVING BOUNDARIES DUE TO FORCES ======") 
             agent = FLAMEGPU.agent("ECM")        
@@ -851,10 +883,18 @@ else:
     ecm_agent_counts = [None]*len(steps)
     BFORCE = make_dataclass("BFORCE", [("fxpos", float), ("fxneg", float), ("fypos", float), ("fyneg", float), ("fzpos", float), ("fzneg", float)])
     
+        
+    incL_dir1 = (BPOS_OVER_TIME.iloc[:,POISSON_DIRS[0]*2] - BPOS_OVER_TIME.iloc[:,POISSON_DIRS[0]*2 + 1]) - (BPOS_OVER_TIME.iloc[0,POISSON_DIRS[0]*2] -  BPOS_OVER_TIME.iloc[0,POISSON_DIRS[0]*2 + 1]) 
+    incL_dir2 = (BPOS_OVER_TIME.iloc[:,POISSON_DIRS[1]*2] - BPOS_OVER_TIME.iloc[:,POISSON_DIRS[1]*2 + 1]) - (BPOS_OVER_TIME.iloc[0,POISSON_DIRS[1]*2] -  BPOS_OVER_TIME.iloc[0,POISSON_DIRS[1]*2 + 1])
+
+    print(incL_dir1)
+    print('bla')
+    print(incL_dir2)
+        
+    POISSON_RATIO_OVER_TIME = -1 * incL_dir1 / incL_dir2
+
     counter = 0;
     for step in steps:
-        if counter == 0:
-            BFORCE_OVER_TIME = pd.DataFrame([BFORCE(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)])
         stepcount = step.getStepCount();
         ecm_agents = step.getAgent("ECM");
         ecm_agent_counts[counter] = ecm_agents.getCount();
@@ -865,7 +905,10 @@ else:
         f_bz_pos = ecm_agents.getSumFloat("f_bz_pos")
         f_bz_neg = ecm_agents.getSumFloat("f_bz_neg")
         step_bforce = pd.DataFrame([BFORCE(f_bx_pos, f_bx_neg, f_by_pos, f_by_neg, f_bz_pos, f_bz_neg)])
-        BFORCE_OVER_TIME = BFORCE_OVER_TIME.append(step_bforce, ignore_index=True)
+        if counter == 0:
+            BFORCE_OVER_TIME = pd.DataFrame([BFORCE(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)])
+        else:
+            BFORCE_OVER_TIME = BFORCE_OVER_TIME.append(step_bforce, ignore_index=True)
         counter+=1;
     print()
     print("============================")
@@ -875,18 +918,31 @@ else:
     print("============================")
     print("BOUNDARY FORCES OVER TIME")
     print(BFORCE_OVER_TIME)
+    print()
+    print("============================")
+    print("POISSON RATIO OVER TIME")
+    print(POISSON_RATIO_OVER_TIME)
+    print()
     # Plotting
-    fig,ax=plt.subplots(1,2)
+    fig,ax=plt.subplots(2,2)
     #BPOS_OVER_TIME.plot()
 
-    BPOS_OVER_TIME.plot(ax = ax[0])
+    BPOS_OVER_TIME.plot(ax = ax[0,0])
     #ax = df['size'].plot(secondary_y=True, color='k', marker='o')
-    ax[0].set_xlabel('time step')
-    ax[0].set_ylabel('pos')
-    BFORCE_OVER_TIME.plot(ax = ax[1])
-    ax[1].set_ylabel('force')
-    ax[1].set_xlabel('time step')
+    ax[0,0].set_xlabel('time step')
+    ax[0,0].set_ylabel('pos')
+    BFORCE_OVER_TIME.plot(ax = ax[0,1])
+    ax[0,1].set_ylabel('force')
+    ax[0,1].set_xlabel('time step')
+    POISSON_RATIO_OVER_TIME.plot(ax = ax[1,0])
+    ax[1,0].set_ylabel('poisson ratio')
+    ax[1,0].set_xlabel('time step')
+    plt.sca(ax[1,1])
+    plt.plot(BPOS_OVER_TIME['ypos'] - 0.5,  -BFORCE_OVER_TIME['fypos'])
+    ax[1,1].set_ylabel('force')
+    ax[1,1].set_xlabel('disp')
 
+    fig.tight_layout()
     plt.show()
     #for j in range(len(steps)):
     #  print("step",j,"ECM",ecm_agent_counts[j]) 

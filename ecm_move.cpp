@@ -190,7 +190,7 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
   }
   
   //if (id == 9 || id == 10 || id == 13 || id == 14 || id == 25 || id == 26 || id == 29 || id == 30) {
-  if (id == 11 || id == 12 || id == 18) {
+  if (DEBUG_PRINTING == 1 && (id == 11 || id == 12 || id == 18)) {
      printf("agent %d position ANTES (%2.4f, %2.4f, %2.4f) ->  boundary pos: [%2.4f, %2.4f, %2.4f, %2.4f, %2.4f, %2.4f], clamping: [%d, %d, %d, %d, %d, %d] \n",id, agent_x,agent_y,agent_z, COORD_BOUNDARY_X_POS, COORD_BOUNDARY_X_NEG, COORD_BOUNDARY_Y_POS, COORD_BOUNDARY_Y_NEG, COORD_BOUNDARY_Z_POS, COORD_BOUNDARY_Z_NEG, clamped_bx_pos, clamped_bx_neg, clamped_by_pos, clamped_by_neg, clamped_bz_pos, clamped_bz_neg);
   }
   
@@ -287,7 +287,7 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
   }
   
   //if (id == 9 || id == 10 || id == 13 || id == 14 || id == 25 || id == 26 || id == 29 || id == 30) {
-  if (id == 11 || id == 12 || id == 18) {
+  if (DEBUG_PRINTING == 1 && (id == 11 || id == 12 || id == 18)) {
       printf("agent %d position EN MEDIO (%2.4f, %2.4f, %2.4f) ->  boundary pos: [%2.4f, %2.4f, %2.4f, %2.4f, %2.4f, %2.4f], clamping: [%d, %d, %d, %d, %d, %d] \n", id, agent_x, agent_y, agent_z, COORD_BOUNDARY_X_POS, COORD_BOUNDARY_X_NEG, COORD_BOUNDARY_Y_POS, COORD_BOUNDARY_Y_NEG, COORD_BOUNDARY_Z_POS, COORD_BOUNDARY_Z_NEG, clamped_bx_pos, clamped_bx_neg, clamped_by_pos, clamped_by_neg, clamped_bz_pos, clamped_bz_neg);
   }
    
@@ -299,7 +299,7 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
 
   
   //if (id == 9 || id == 10 || id == 13 || id == 14 || id == 25 || id == 26 || id == 29 || id == 30) {
-  if (id == 11 || id == 12 || id == 18) {
+  if (DEBUG_PRINTING == 1 && (id == 11 || id == 12 || id == 18)) {
       printf("agent %d position DESPUES (%2.4f, %2.4f, %2.4f) ->  boundary pos: [%2.4f, %2.4f, %2.4f, %2.4f, %2.4f, %2.4f], clamping: [%d, %d, %d, %d, %d, %d] \n", id, agent_x, agent_y, agent_z, COORD_BOUNDARY_X_POS, COORD_BOUNDARY_X_NEG, COORD_BOUNDARY_Y_POS, COORD_BOUNDARY_Y_NEG, COORD_BOUNDARY_Z_POS, COORD_BOUNDARY_Z_NEG, clamped_bx_pos, clamped_bx_neg, clamped_by_pos, clamped_by_neg, clamped_bz_pos, clamped_bz_neg);
   }
   
