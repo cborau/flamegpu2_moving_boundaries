@@ -103,7 +103,7 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
   uint8_t clamped_bz_pos = FLAMEGPU->getVariable<uint8_t>("clamped_bz_pos");
   uint8_t clamped_bz_neg = FLAMEGPU->getVariable<uint8_t>("clamped_bz_neg");
 
-  // Agent force transmitted to clamped boundaries
+  // Agent force transmitted to clamped or elastic boundaries 
   float f_bx_pos = 0.0;
   float f_bx_neg = 0.0;
   float f_by_pos = 0.0;
@@ -284,6 +284,28 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
             agent_y = prev_agent_y;
         }
     }
+  }
+
+  // Add forces from elastic boundaries (therefore, not clamped)
+  if (fabsf(agent_x - COORD_BOUNDARY_X_POS) > fabsf(agent_x - COORD_BOUNDARY_X_NEG)) { //if closer to xpos
+      f_bx_pos += agent_boundary_fx;// agent_boundary_fx will be 0 except for agents closer to boundaries
+  }
+  else {
+      f_bx_neg += agent_boundary_fx;
+  }
+
+  if (fabsf(agent_y - COORD_BOUNDARY_Y_POS) > fabsf(agent_y - COORD_BOUNDARY_Y_NEG)) { //if closer to ypos
+      f_by_pos += agent_boundary_fy; // agent_boundary_fy will be 0 except for agents closer to boundaries
+  }
+  else {
+      f_by_neg += agent_boundary_fy;
+  }
+
+  if (fabsf(agent_z - COORD_BOUNDARY_Z_POS) > fabsf(agent_z - COORD_BOUNDARY_Z_NEG)) { //if closer to zpos
+      f_bz_pos += agent_boundary_fz; // agent_boundary_fz will be 0 except for agents closer to boundaries
+  }
+  else {
+      f_bz_neg += agent_boundary_fz;
   }
   
   //if (id == 9 || id == 10 || id == 13 || id == 14 || id == 25 || id == 26 || id == 29 || id == 30) {

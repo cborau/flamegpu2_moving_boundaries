@@ -27,12 +27,12 @@ SAVE_EVERY_N_STEPS = 10;
 TIME_STEP = 0.05; # seconds
 STEPS = 400;
 BOUNDARY_COORDS = [0.5, -0.5, 0.5, -0.5, 0.5, -0.5]; #+X,-X,+Y,-Y,+Z,-Z
-BOUNDARY_DISP_RATES = [0.0, 0.0, 0.01, -0.01, 0.0, 0.0]; # units/second
+BOUNDARY_DISP_RATES = [0.0, 0.0, -0.01, 0.01, 0.0, 0.0]; # units/second
 POISSON_DIRS = [0, 1] # 0: xdir, 1:ydir, 2:zdir. poisson_ratio ~= -incL(dir1)/incL(dir2); dir2 is the direction in which the load is applied
-ALLOW_BOUNDARY_ELASTIC_MOVEMENT = [0, 0, 0, 0, 0, 0]; # [bool]
-RELATIVE_BOUNDARY_STIFFNESS = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0];  #TODO: FIX POISSON RATIO CALC
-BOUNDARY_STIFFNESS_VALUE = 1 # N/units
-BOUNDARY_DUMPING_VALUE = 0
+ALLOW_BOUNDARY_ELASTIC_MOVEMENT = [1, 1, 0, 0, 1, 1]; # [bool]
+RELATIVE_BOUNDARY_STIFFNESS = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0];  
+BOUNDARY_STIFFNESS_VALUE = 100.0 # N/units
+BOUNDARY_DUMPING_VALUE = 1.0
 BOUNDARY_STIFFNESS = [BOUNDARY_STIFFNESS_VALUE*x for x in RELATIVE_BOUNDARY_STIFFNESS]
 BOUNDARY_DUMPING = [BOUNDARY_DUMPING_VALUE*x for x in RELATIVE_BOUNDARY_STIFFNESS]
 CLAMP_AGENT_TOUCHING_BOUNDARY = [0, 0, 1, 1, 0, 0]; #+X,-X,+Y,-Y,+Z,-Z [bool]
@@ -44,7 +44,8 @@ print("ECM_ECM_EQUILIBRIUM_DISTANCE: ", ECM_ECM_EQUILIBRIUM_DISTANCE)
 ECM_BOUNDARY_INTERACTION_RADIUS = 0.05;
 ECM_BOUNDARY_EQUILIBRIUM_DISTANCE = 0.0;
 
-ECM_K_ELAST = 2.0;
+
+ECM_K_ELAST = 1.0;
 ECM_D_DUMPING = 1.0;
 ECM_MASS = 1.0;
 
@@ -68,6 +69,7 @@ BPOS = make_dataclass("BPOS", [("xpos", float), ("xneg", float), ("ypos", float)
 BPOS_OVER_TIME = pd.DataFrame([BPOS(BOUNDARY_COORDS[0], BOUNDARY_COORDS[1], BOUNDARY_COORDS[2], BOUNDARY_COORDS[3], BOUNDARY_COORDS[4], BOUNDARY_COORDS[5])])
 
 # Some checkings
+critical_error = False
 msg_poisson = "WARNING: poisson ratio directions are not well defined or might not have sense due to boundary conditions \n"
 if (BOUNDARY_DISP_RATES[0] != 0.0 or BOUNDARY_DISP_RATES[1] != 0.0) and POISSON_DIRS[1] != 0:
     print(msg_poisson)
@@ -75,6 +77,15 @@ if (BOUNDARY_DISP_RATES[2] != 0.0 or BOUNDARY_DISP_RATES[3] != 0.0) and POISSON_
     print(msg_poisson)
 if (BOUNDARY_DISP_RATES[4] != 0.0 or BOUNDARY_DISP_RATES[5] != 0.0) and POISSON_DIRS[1] != 2:
     print(msg_poisson)
+
+msg_incompatible_conditions = "ERROR: CLAMP_AGENT_TOUCHING_BOUNDARY condition is incompatible with ALLOW_BOUNDARY_ELASTIC_MOVEMENT in position [{}]"
+for i in range(6):
+    if CLAMP_AGENT_TOUCHING_BOUNDARY[i] > 0 and ALLOW_BOUNDARY_ELASTIC_MOVEMENT[i] > 0:
+        print(msg_incompatible_conditions.format(i))
+        critical_error = True
+
+if critical_error:
+    quit()
 
 print("Max expected boundary position: ", MAX_EXPECTED_BOUNDARY_POS);
 print("Min expected boundary position: ", MIN_EXPECTED_BOUNDARY_POS);
@@ -138,6 +149,7 @@ env.newPropertyFloat("ECM_MASS", ECM_MASS);
 # Boundaries position
 bcs = [BOUNDARY_COORDS[0], BOUNDARY_COORDS[1], BOUNDARY_COORDS[2], BOUNDARY_COORDS[3], BOUNDARY_COORDS[4], BOUNDARY_COORDS[5]];  #+X,-X,+Y,-Y,+Z,-Z
 env.newPropertyArrayFloat("COORDS_BOUNDARIES", 6, bcs);
+env.newPropertyArrayFloat("INIT_COORDS_BOUNDARIES", 6, bcs); #this is used to compute elastic forces with respect to initial position
 
 # Boundaries displacement rate (units/second). 
 bdrs = [BOUNDARY_DISP_RATES[0], BOUNDARY_DISP_RATES[1], BOUNDARY_DISP_RATES[2], BOUNDARY_DISP_RATES[3], BOUNDARY_DISP_RATES[4], BOUNDARY_DISP_RATES[5]]; #+X,-X,+Y,-Y,+Z,-Z
@@ -146,6 +158,9 @@ env.newPropertyArrayFloat("DISP_RATES_BOUNDARIES", 6,  bdrs);
 
 # Boundary-Agent behaviour
 env.newPropertyArrayUInt("CLAMP_AGENT_TOUCHING_BOUNDARY", 6, CLAMP_AGENT_TOUCHING_BOUNDARY);
+env.newPropertyArrayUInt("ALLOW_BOUNDARY_ELASTIC_MOVEMENT", 6, ALLOW_BOUNDARY_ELASTIC_MOVEMENT);
+env.newPropertyArrayFloat("BOUNDARY_STIFFNESS", 6, BOUNDARY_STIFFNESS);
+env.newPropertyArrayFloat("BOUNDARY_DUMPING", 6, BOUNDARY_DUMPING);
 env.newPropertyArrayUInt("ALLOW_AGENT_SLIDING", 6, ALLOW_AGENT_SLIDING);
 env.newPropertyFloat("ECM_BOUNDARY_INTERACTION_RADIUS", ECM_BOUNDARY_INTERACTION_RADIUS);
 env.newPropertyFloat("ECM_BOUNDARY_EQUILIBRIUM_DISTANCE", ECM_BOUNDARY_EQUILIBRIUM_DISTANCE);
@@ -424,7 +439,7 @@ class MoveBoundaries(pyflamegpu.HostFunctionCallback):
          if PAUSE_EVERY_STEP:
              input() # pause everystep
 
-         if any(catb < 1 for catb in CLAMP_AGENT_TOUCHING_BOUNDARY):
+         if any(catb < 1 for catb in CLAMP_AGENT_TOUCHING_BOUNDARY) or any(abem > 0 for abem in ALLOW_BOUNDARY_ELASTIC_MOVEMENT):
              boundaries_moved = True
              agent = FLAMEGPU.agent("ECM")
              minmaxPositions = list()
@@ -434,9 +449,20 @@ class MoveBoundaries(pyflamegpu.HostFunctionCallback):
              minmaxPositions.append(agent.minFloat("y"))
              minmaxPositions.append(agent.maxFloat("z"))
              minmaxPositions.append(agent.minFloat("z"))
+             boundary_equil_distances = list()             
+             boundary_equil_distances.append(ECM_BOUNDARY_EQUILIBRIUM_DISTANCE)
+             boundary_equil_distances.append(-ECM_BOUNDARY_EQUILIBRIUM_DISTANCE)
+             boundary_equil_distances.append(ECM_BOUNDARY_EQUILIBRIUM_DISTANCE)
+             boundary_equil_distances.append(-ECM_BOUNDARY_EQUILIBRIUM_DISTANCE)
+             boundary_equil_distances.append(ECM_BOUNDARY_EQUILIBRIUM_DISTANCE)
+             boundary_equil_distances.append(-ECM_BOUNDARY_EQUILIBRIUM_DISTANCE)
              for i in range(6): 
-                if CLAMP_AGENT_TOUCHING_BOUNDARY[i] < 1: BOUNDARY_COORDS[i] = minmaxPositions[i]
-                
+                if CLAMP_AGENT_TOUCHING_BOUNDARY[i] < 1: 
+                    if ALLOW_BOUNDARY_ELASTIC_MOVEMENT[i] > 0:
+                        BOUNDARY_COORDS[i] = minmaxPositions[i] + boundary_equil_distances[i]
+                    else:
+                        BOUNDARY_COORDS[i] = minmaxPositions[i]
+
              bcs = [BOUNDARY_COORDS[0], BOUNDARY_COORDS[1], BOUNDARY_COORDS[2], BOUNDARY_COORDS[3], BOUNDARY_COORDS[4], BOUNDARY_COORDS[5]]  #+X,-X,+Y,-Y,+Z,-Z
              FLAMEGPU.environment.setPropertyArrayFloat("COORDS_BOUNDARIES", bcs)        
                     
@@ -458,29 +484,29 @@ class MoveBoundaries(pyflamegpu.HostFunctionCallback):
                 print ("New boundary positions [+X,-X,+Y,-Y,+Z,-Z]: ", BOUNDARY_COORDS)
                 print ("=================================================")
 
-         if any(abem > 0 for abem in ALLOW_BOUNDARY_ELASTIC_MOVEMENT):
-            boundaries_moved = True
-            print ("====== MOVING BOUNDARIES DUE TO FORCES ======") 
-            agent = FLAMEGPU.agent("ECM")        
-            sum_bx_pos = agent.sumFloat("f_bx_pos")
-            sum_bx_neg = agent.sumFloat("f_bx_neg")
-            sum_by_pos = agent.sumFloat("f_by_pos")
-            sum_by_neg = agent.sumFloat("f_by_neg")
-            sum_bz_pos = agent.sumFloat("f_bz_pos")
-            sum_bz_neg = agent.sumFloat("f_bz_neg")
-            print ("Total forces [+X,-X,+Y,-Y,+Z,-Z]: ", sum_bx_pos, sum_bx_neg, sum_by_pos, sum_by_neg, sum_bz_pos, sum_bz_neg)
-            boundary_forces = [sum_bx_pos, sum_bx_neg, sum_by_pos, sum_by_neg, sum_bz_pos, sum_bz_neg];            
-            for i in range(6):  
-                if BOUNDARY_DISP_RATES[i] < EPSILON and BOUNDARY_DISP_RATES[i] > -EPSILON and ALLOW_BOUNDARY_ELASTIC_MOVEMENT[i]:
-                    #u = boundary_forces[i] / BOUNDARY_STIFFNESS[i]
-                    u = (boundary_forces[i] * TIME_STEP)/ (BOUNDARY_STIFFNESS[i] * TIME_STEP + BOUNDARY_DUMPING[i])
-                    print ("Displacement for boundary {} = {}".format(i,u));
-                    BOUNDARY_COORDS[i] += u
+         #if any(abem > 0 for abem in ALLOW_BOUNDARY_ELASTIC_MOVEMENT):
+         #   boundaries_moved = True
+         #   print ("====== MOVING BOUNDARIES DUE TO FORCES ======") 
+         #   agent = FLAMEGPU.agent("ECM")        
+         #   sum_bx_pos = agent.sumFloat("f_bx_pos")
+         #   sum_bx_neg = agent.sumFloat("f_bx_neg")
+         #   sum_by_pos = agent.sumFloat("f_by_pos")
+         #   sum_by_neg = agent.sumFloat("f_by_neg")
+         #   sum_bz_pos = agent.sumFloat("f_bz_pos")
+         #   sum_bz_neg = agent.sumFloat("f_bz_neg")
+         #   print ("Total forces [+X,-X,+Y,-Y,+Z,-Z]: ", sum_bx_pos, sum_bx_neg, sum_by_pos, sum_by_neg, sum_bz_pos, sum_bz_neg)
+         #   boundary_forces = [sum_bx_pos, sum_bx_neg, sum_by_pos, sum_by_neg, sum_bz_pos, sum_bz_neg];            
+         #   for i in range(6):  
+         #       if BOUNDARY_DISP_RATES[i] < EPSILON and BOUNDARY_DISP_RATES[i] > -EPSILON and ALLOW_BOUNDARY_ELASTIC_MOVEMENT[i]:
+         #           #u = boundary_forces[i] / BOUNDARY_STIFFNESS[i]
+         #           u = (boundary_forces[i] * TIME_STEP)/ (BOUNDARY_STIFFNESS[i] * TIME_STEP + BOUNDARY_DUMPING[i])
+         #           print ("Displacement for boundary {} = {}".format(i,u));
+         #           BOUNDARY_COORDS[i] += u
             
-            bcs = [BOUNDARY_COORDS[0], BOUNDARY_COORDS[1], BOUNDARY_COORDS[2], BOUNDARY_COORDS[3], BOUNDARY_COORDS[4], BOUNDARY_COORDS[5]]  #+X,-X,+Y,-Y,+Z,-Z
-            FLAMEGPU.environment.setPropertyArrayFloat("COORDS_BOUNDARIES", bcs)
-            print ("New boundary positions [+X,-X,+Y,-Y,+Z,-Z]: ", BOUNDARY_COORDS)
-            print ("=================================================")
+         #   bcs = [BOUNDARY_COORDS[0], BOUNDARY_COORDS[1], BOUNDARY_COORDS[2], BOUNDARY_COORDS[3], BOUNDARY_COORDS[4], BOUNDARY_COORDS[5]]  #+X,-X,+Y,-Y,+Z,-Z
+         #   FLAMEGPU.environment.setPropertyArrayFloat("COORDS_BOUNDARIES", bcs)
+         #   print ("New boundary positions [+X,-X,+Y,-Y,+Z,-Z]: ", BOUNDARY_COORDS)
+         #   print ("=================================================")
          
          if boundaries_moved:
              new_pos = pd.DataFrame([BPOS(BOUNDARY_COORDS[0], BOUNDARY_COORDS[1], BOUNDARY_COORDS[2], BOUNDARY_COORDS[3], BOUNDARY_COORDS[4], BOUNDARY_COORDS[5])])
