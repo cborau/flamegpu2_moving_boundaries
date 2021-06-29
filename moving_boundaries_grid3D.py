@@ -7,9 +7,12 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import pathlib
 from dataclasses import make_dataclass
+import time
 
 sns.set()
 
+
+start_time = time.time()
 # Set whether to run single model or ensemble, agent population size, and simulation steps 
 ENSEMBLE = False;
 ENSEMBLE_RUNS = 0;
@@ -17,7 +20,7 @@ N = 10;
 ECM_AGENTS_PER_DIR = [N , N, N];
 ECM_POPULATION_SIZE = ECM_AGENTS_PER_DIR[0] * ECM_AGENTS_PER_DIR[1] * ECM_AGENTS_PER_DIR[2]; 
 # Change to false if pyflamegpu has not been built with visualisation support
-VISUALISATION = True;
+VISUALISATION = False;
 DEBUG_PRINTING = False;
 PAUSE_EVERY_STEP = False;
 SAVE_DATA_TO_FILE = False;
@@ -27,12 +30,12 @@ SAVE_EVERY_N_STEPS = 10;
 TIME_STEP = 0.05; # seconds
 STEPS = 400;
 BOUNDARY_COORDS = [0.5, -0.5, 0.5, -0.5, 0.5, -0.5]; #+X,-X,+Y,-Y,+Z,-Z
-BOUNDARY_DISP_RATES = [0.0, 0.0, -0.01, 0.01, 0.0, 0.0]; # units/second
+BOUNDARY_DISP_RATES = [0.0, 0.0, -0.01, 0.0, 0.0, 0.0]; # units/second
 POISSON_DIRS = [0, 1] # 0: xdir, 1:ydir, 2:zdir. poisson_ratio ~= -incL(dir1)/incL(dir2); dir2 is the direction in which the load is applied
-ALLOW_BOUNDARY_ELASTIC_MOVEMENT = [1, 1, 0, 0, 1, 1]; # [bool]
+ALLOW_BOUNDARY_ELASTIC_MOVEMENT = [0, 0, 0, 0, 0, 0]; # [bool]
 RELATIVE_BOUNDARY_STIFFNESS = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0];  
-BOUNDARY_STIFFNESS_VALUE = 100.0 # N/units
-BOUNDARY_DUMPING_VALUE = 1.0
+BOUNDARY_STIFFNESS_VALUE = 1.0 # N/units
+BOUNDARY_DUMPING_VALUE = 0.0
 BOUNDARY_STIFFNESS = [BOUNDARY_STIFFNESS_VALUE*x for x in RELATIVE_BOUNDARY_STIFFNESS]
 BOUNDARY_DUMPING = [BOUNDARY_DUMPING_VALUE*x for x in RELATIVE_BOUNDARY_STIFFNESS]
 CLAMP_AGENT_TOUCHING_BOUNDARY = [0, 0, 1, 1, 0, 0]; #+X,-X,+Y,-Y,+Z,-Z [bool]
@@ -905,6 +908,7 @@ if ENSEMBLE:
     # plt.close(fig);
 
 else:
+    print("--- EXECUTION TIME: %s seconds ---" % (time.time() - start_time))
     steps = logs.getStepLog();
     ecm_agent_counts = [None]*len(steps)
     BFORCE = make_dataclass("BFORCE", [("fxpos", float), ("fxneg", float), ("fypos", float), ("fyneg", float), ("fzpos", float), ("fzneg", float)])
@@ -964,7 +968,7 @@ else:
     ax[1,0].set_ylabel('poisson ratio')
     ax[1,0].set_xlabel('time step')
     plt.sca(ax[1,1])
-    plt.plot(BPOS_OVER_TIME['ypos'] - 0.5,  -BFORCE_OVER_TIME['fypos'])
+    plt.plot(BPOS_OVER_TIME['ypos'] - 0.5,  BFORCE_OVER_TIME['fypos'])
     ax[1,1].set_ylabel('force')
     ax[1,1].set_xlabel('disp')
 
