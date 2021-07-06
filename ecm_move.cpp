@@ -170,6 +170,19 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
   const int ALLOW_AGENT_SLIDING_Z_NEG = FLAMEGPU->environment.getProperty<int>("ALLOW_AGENT_SLIDING", 5);
   const float ECM_BOUNDARY_EQUILIBRIUM_DISTANCE = FLAMEGPU->environment.getProperty<float>("ECM_BOUNDARY_EQUILIBRIUM_DISTANCE");
 
+  const float DISP_RATE_BOUNDARY_PARALLEL_X_POS_Y = FLAMEGPU->environment.getProperty<float>("DISP_RATES_BOUNDARIES_PARALLEL", 0);
+  const float DISP_RATE_BOUNDARY_PARALLEL_X_POS_Z = FLAMEGPU->environment.getProperty<float>("DISP_RATES_BOUNDARIES_PARALLEL", 1);
+  const float DISP_RATE_BOUNDARY_PARALLEL_X_NEG_Y = FLAMEGPU->environment.getProperty<float>("DISP_RATES_BOUNDARIES_PARALLEL", 2);
+  const float DISP_RATE_BOUNDARY_PARALLEL_X_NEG_Z = FLAMEGPU->environment.getProperty<float>("DISP_RATES_BOUNDARIES_PARALLEL", 3);
+  const float DISP_RATE_BOUNDARY_PARALLEL_Y_POS_X = FLAMEGPU->environment.getProperty<float>("DISP_RATES_BOUNDARIES_PARALLEL", 4);
+  const float DISP_RATE_BOUNDARY_PARALLEL_Y_POS_Z = FLAMEGPU->environment.getProperty<float>("DISP_RATES_BOUNDARIES_PARALLEL", 5);
+  const float DISP_RATE_BOUNDARY_PARALLEL_Y_NEG_X = FLAMEGPU->environment.getProperty<float>("DISP_RATES_BOUNDARIES_PARALLEL", 6);
+  const float DISP_RATE_BOUNDARY_PARALLEL_Y_NEG_Z = FLAMEGPU->environment.getProperty<float>("DISP_RATES_BOUNDARIES_PARALLEL", 7);
+  const float DISP_RATE_BOUNDARY_PARALLEL_Z_POS_X = FLAMEGPU->environment.getProperty<float>("DISP_RATES_BOUNDARIES_PARALLEL", 8);
+  const float DISP_RATE_BOUNDARY_PARALLEL_Z_POS_Y = FLAMEGPU->environment.getProperty<float>("DISP_RATES_BOUNDARIES_PARALLEL", 9);
+  const float DISP_RATE_BOUNDARY_PARALLEL_Z_NEG_X = FLAMEGPU->environment.getProperty<float>("DISP_RATES_BOUNDARIES_PARALLEL", 10);
+  const float DISP_RATE_BOUNDARY_PARALLEL_Z_NEG_Y = FLAMEGPU->environment.getProperty<float>("DISP_RATES_BOUNDARIES_PARALLEL", 11);
+
   float prev_agent_x = agent_x;
   float prev_agent_y = agent_y;
   float prev_agent_z = agent_z;
@@ -201,12 +214,24 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
     f_bx_pos = agent_fx;
     if (ALLOW_AGENT_SLIDING_X_POS == 0) {
         if ((clamped_by_pos == 0) && (clamped_by_neg == 0)) { // this must be checked to avoid overwriting when agent is clamped to multiple boundaries
-            agent_vy = 0.0;
             agent_y = prev_agent_y;
+            if (fabsf(DISP_RATE_BOUNDARY_PARALLEL_X_POS_Y) > 0.0) {
+                agent_vy = DISP_RATE_BOUNDARY_PARALLEL_X_POS_Y;
+                agent_y += agent_vy * DELTA_TIME;
+            }
+            else {
+                agent_vy = 0.0;
+            }
         }
-        if ((clamped_bz_pos == 0) && (clamped_bz_neg == 0)) {
-            agent_vz = 0.0;
+        if ((clamped_bz_pos == 0) && (clamped_bz_neg == 0)) {            
             agent_z = prev_agent_z;
+            if (fabsf(DISP_RATE_BOUNDARY_PARALLEL_X_POS_Z) > 0.0) {
+                agent_vz = DISP_RATE_BOUNDARY_PARALLEL_X_POS_Z;
+                agent_z += agent_vz * DELTA_TIME;
+            }
+            else {
+                agent_vz = 0.0;
+            }
         }
     }
   }
@@ -216,12 +241,24 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
     f_bx_neg = agent_fx;
     if (ALLOW_AGENT_SLIDING_X_NEG == 0) {
         if ((clamped_by_pos == 0) && (clamped_by_neg == 0)) { 
-            agent_vy = 0.0;
             agent_y = prev_agent_y;
+            if (fabsf(DISP_RATE_BOUNDARY_PARALLEL_X_NEG_Y) > 0.0) {
+                agent_vy = DISP_RATE_BOUNDARY_PARALLEL_X_NEG_Y;
+                agent_y += agent_vy * DELTA_TIME;
+            }
+            else {
+                agent_vy = 0.0;
+            }
         }
         if ((clamped_bz_pos == 0) && (clamped_bz_neg == 0)) {
-            agent_vz = 0.0;
             agent_z = prev_agent_z;
+            if (fabsf(DISP_RATE_BOUNDARY_PARALLEL_X_NEG_Z) > 0.0) {
+                agent_vz = DISP_RATE_BOUNDARY_PARALLEL_X_NEG_Z;
+                agent_z += agent_vz * DELTA_TIME;
+            }
+            else {
+                agent_vz = 0.0;
+            }
         }
     }
   }
@@ -231,12 +268,24 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
     f_by_pos = agent_fy;
     if (ALLOW_AGENT_SLIDING_Y_POS == 0) {
         if ((clamped_bx_pos == 0) && (clamped_bx_neg == 0)) { 
-            agent_vx = 0.0;
             agent_x = prev_agent_x;
+            if (fabsf(DISP_RATE_BOUNDARY_PARALLEL_Y_POS_X) > 0.0) {
+                agent_vx = DISP_RATE_BOUNDARY_PARALLEL_Y_POS_X;
+                agent_x += agent_vx * DELTA_TIME;
+            }
+            else {
+                agent_vx = 0.0;
+            }
         }
         if ((clamped_bz_pos == 0) && (clamped_bz_neg == 0)) {
-            agent_vz = 0.0;
             agent_z = prev_agent_z;
+            if (fabsf(DISP_RATE_BOUNDARY_PARALLEL_Y_POS_Z) > 0.0) {
+                agent_vz = DISP_RATE_BOUNDARY_PARALLEL_Y_POS_Z;
+                agent_z += agent_vz * DELTA_TIME;
+            }
+            else {
+                agent_vz = 0.0;
+            }
         }
     }
   }
@@ -246,12 +295,24 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
     f_by_neg = agent_fy;
     if (ALLOW_AGENT_SLIDING_Y_NEG == 0) {
         if ((clamped_bx_pos == 0) && (clamped_bx_neg == 0)) {
-            agent_vx = 0.0;
             agent_x = prev_agent_x;
+            if (fabsf(DISP_RATE_BOUNDARY_PARALLEL_Y_NEG_X) > 0.0) {
+                agent_vx = DISP_RATE_BOUNDARY_PARALLEL_Y_NEG_X;
+                agent_x += agent_vx * DELTA_TIME;
+            }
+            else {
+                agent_vx = 0.0;
+            }
         }
         if ((clamped_bz_pos == 0) && (clamped_bz_neg == 0)) {
-            agent_vz = 0.0;
             agent_z = prev_agent_z;
+            if (fabsf(DISP_RATE_BOUNDARY_PARALLEL_Y_NEG_Z) > 0.0) {
+                agent_vz = DISP_RATE_BOUNDARY_PARALLEL_Y_NEG_Z;
+                agent_z += agent_vz * DELTA_TIME;
+            }
+            else {
+                agent_vz = 0.0;
+            }
         }
     }
   }
@@ -261,12 +322,24 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
     f_bz_pos = agent_fz;
     if (ALLOW_AGENT_SLIDING_Z_POS == 0) {
         if ((clamped_bx_pos == 0) && (clamped_bx_neg == 0)) {
-            agent_vx = 0.0;
             agent_x = prev_agent_x;
+            if (fabsf(DISP_RATE_BOUNDARY_PARALLEL_Z_POS_X) > 0.0) {
+                agent_vx = DISP_RATE_BOUNDARY_PARALLEL_Z_POS_X;
+                agent_x += agent_vx * DELTA_TIME;
+            }
+            else {
+                agent_vx = 0.0;
+            }
         }
         if ((clamped_by_pos == 0) && (clamped_by_neg == 0)) {
-            agent_vy = 0.0;
             agent_y = prev_agent_y;
+            if (fabsf(DISP_RATE_BOUNDARY_PARALLEL_Z_POS_Y) > 0.0) {
+                agent_vy = DISP_RATE_BOUNDARY_PARALLEL_Z_POS_Y;
+                agent_y += agent_vy * DELTA_TIME;
+            }
+            else {
+                agent_vy = 0.0;
+            }
         }
     }
   }
@@ -276,12 +349,24 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
     f_bz_neg = agent_fz;
     if (ALLOW_AGENT_SLIDING_Z_NEG == 0) {
         if ((clamped_bx_pos == 0) && (clamped_bx_neg == 0)) {
-            agent_vx = 0.0;
             agent_x = prev_agent_x;
+            if (fabsf(DISP_RATE_BOUNDARY_PARALLEL_Z_NEG_X) > 0.0) {
+                agent_vx = DISP_RATE_BOUNDARY_PARALLEL_Z_NEG_X;
+                agent_x += agent_vx * DELTA_TIME;
+            }
+            else {
+                agent_vx = 0.0;
+            }
         }
         if ((clamped_by_pos == 0) && (clamped_by_neg == 0)) {
-            agent_vy = 0.0;
             agent_y = prev_agent_y;
+            if (fabsf(DISP_RATE_BOUNDARY_PARALLEL_Z_NEG_Y) > 0.0) {
+                agent_vy = DISP_RATE_BOUNDARY_PARALLEL_Z_NEG_Y;
+                agent_y += agent_vy * DELTA_TIME;
+            }
+            else {
+                agent_vy = 0.0;
+            }
         }
     }
   }

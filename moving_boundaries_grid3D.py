@@ -20,17 +20,30 @@ N = 10;
 ECM_AGENTS_PER_DIR = [N , N, N];
 ECM_POPULATION_SIZE = ECM_AGENTS_PER_DIR[0] * ECM_AGENTS_PER_DIR[1] * ECM_AGENTS_PER_DIR[2]; 
 # Change to false if pyflamegpu has not been built with visualisation support
-VISUALISATION = False;
+VISUALISATION = True;
 DEBUG_PRINTING = False;
 PAUSE_EVERY_STEP = False;
 SAVE_DATA_TO_FILE = False;
 SAVE_EVERY_N_STEPS = 10;
+OSCILLATORY_SHEAR_ASSAY = True; #if true, BOUNDARY_DISP_RATES_PARALLEL options are overrun but used to make the boundaries oscillate in their corresponding planes following a sin() function
 
 # Interaction and mechanical parameters
 TIME_STEP = 0.05; # seconds
 STEPS = 400;
 BOUNDARY_COORDS = [0.5, -0.5, 0.5, -0.5, 0.5, -0.5]; #+X,-X,+Y,-Y,+Z,-Z
-BOUNDARY_DISP_RATES = [0.0, 0.0, -0.01, 0.0, 0.0, 0.0]; # units/second
+BOUNDARY_DISP_RATES = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; # perpendicular to each surface (+X,-X,+Y,-Y,+Z,-Z) [units/second]
+BOUNDARY_DISP_RATES_PARALLEL = [0.0, 0.0, 0.0, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; # parallel to each surface (+X_y,+X_z,-X_y,-X_z,+Y_x,+Y_z,-Y_x,-Y_z,+Z_x,+Z_y,-Z_x,-Z_y)[units/second]
+OSCILLATORY_AMPLITUDE = 0.2; # range [0-1]
+OSCILLATORY_FREQ = 0.2; # strain oscillation frequency [s^-1]
+OSCILLATORY_W = 2 * math.pi * OSCILLATORY_FREQ * TIME_STEP; 
+
+# Parallel disp rate values are overrun in oscillatory assays
+if OSCILLATORY_SHEAR_ASSAY:
+    for d in range(12):
+       if abs(BOUNDARY_DISP_RATES_PARALLEL[d]) > 0.0:
+           BOUNDARY_DISP_RATES_PARALLEL[d] = OSCILLATORY_AMPLITUDE * math.cos(OSCILLATORY_W * 0); # cos() is used because the slope of the sin() function is needed
+
+
 POISSON_DIRS = [0, 1] # 0: xdir, 1:ydir, 2:zdir. poisson_ratio ~= -incL(dir1)/incL(dir2); dir2 is the direction in which the load is applied
 ALLOW_BOUNDARY_ELASTIC_MOVEMENT = [0, 0, 0, 0, 0, 0]; # [bool]
 RELATIVE_BOUNDARY_STIFFNESS = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0];  
@@ -39,7 +52,7 @@ BOUNDARY_DUMPING_VALUE = 0.0
 BOUNDARY_STIFFNESS = [BOUNDARY_STIFFNESS_VALUE*x for x in RELATIVE_BOUNDARY_STIFFNESS]
 BOUNDARY_DUMPING = [BOUNDARY_DUMPING_VALUE*x for x in RELATIVE_BOUNDARY_STIFFNESS]
 CLAMP_AGENT_TOUCHING_BOUNDARY = [0, 0, 1, 1, 0, 0]; #+X,-X,+Y,-Y,+Z,-Z [bool]
-ALLOW_AGENT_SLIDING = [1, 1, 1, 1, 1, 1]; #+X,-X,+Y,-Y,+Z,-Z [bool]
+ALLOW_AGENT_SLIDING = [0, 0, 0, 0, 0, 0]; #+X,-X,+Y,-Y,+Z,-Z [bool]
 #ECM_ECM_INTERACTION_RADIUS = 100;
 #ECM_ECM_EQUILIBRIUM_DISTANCE = 0.45;
 ECM_ECM_EQUILIBRIUM_DISTANCE = (BOUNDARY_COORDS[0] - BOUNDARY_COORDS[1])  / (N - 1);
@@ -62,7 +75,7 @@ RES_PATH = CURR_PATH / 'result_files';
 RES_PATH.mkdir(parents=True, exist_ok=True);
 print("Executing in ", CURR_PATH)
 
-# Other simulation parameters:
+# Other simulation parameters: TODO: INCLUDE PARALLEL DISP RATES
 MAX_EXPECTED_BOUNDARY_POS = max(BOUNDARY_DISP_RATES) * STEPS * TIME_STEP + 1.0;
 MIN_EXPECTED_BOUNDARY_POS = min(BOUNDARY_DISP_RATES) * STEPS * TIME_STEP - 1.0;
 
@@ -155,9 +168,10 @@ env.newPropertyArrayFloat("COORDS_BOUNDARIES", 6, bcs);
 env.newPropertyArrayFloat("INIT_COORDS_BOUNDARIES", 6, bcs); #this is used to compute elastic forces with respect to initial position
 
 # Boundaries displacement rate (units/second). 
-bdrs = [BOUNDARY_DISP_RATES[0], BOUNDARY_DISP_RATES[1], BOUNDARY_DISP_RATES[2], BOUNDARY_DISP_RATES[3], BOUNDARY_DISP_RATES[4], BOUNDARY_DISP_RATES[5]]; #+X,-X,+Y,-Y,+Z,-Z
 # e.g. DISP_BOUNDARY_X_POS = 0.1 means that this boundary moves 0.1 units per second towards +X
-env.newPropertyArrayFloat("DISP_RATES_BOUNDARIES", 6,  bdrs); 
+env.newPropertyArrayFloat("DISP_RATES_BOUNDARIES", 6,  BOUNDARY_DISP_RATES); 
+env.newPropertyArrayFloat("DISP_RATES_BOUNDARIES_PARALLEL", 12,  BOUNDARY_DISP_RATES_PARALLEL); 
+
 
 # Boundary-Agent behaviour
 env.newPropertyArrayUInt("CLAMP_AGENT_TOUCHING_BOUNDARY", 6, CLAMP_AGENT_TOUCHING_BOUNDARY);
@@ -430,28 +444,42 @@ class MoveBoundaries(pyflamegpu.HostFunctionCallback):
      # Define Python class 'constructor'
      def __init__(self):
          super().__init__()
+         self.apply_parallel_disp = list()
+         for d in range(12):
+            if abs(BOUNDARY_DISP_RATES_PARALLEL[d]) > 0.0:
+                self.apply_parallel_disp.append(True)
+            else:
+                self.apply_parallel_disp.append(False)
 
      # Override C++ method: virtual void run(FLAMEGPU_HOST_API*);
      def run(self, FLAMEGPU):
          global stepCounter
          global BOUNDARY_COORDS, BOUNDARY_DISP_RATES, ALLOW_BOUNDARY_ELASTIC_MOVEMENT, BOUNDARY_STIFFNESS, BOUNDARY_DUMPING, BPOS_OVER_TIME
-         global CLAMP_AGENT_TOUCHING_BOUNDARY
+         global CLAMP_AGENT_TOUCHING_BOUNDARY, OSCILLATORY_SHEAR_ASSAY, OSCILLATORY_AMPLITUDE, OSCILLATORY_W
          global DEBUG_PRINTING, PAUSE_EVERY_STEP, TIME_STEP
          
          boundaries_moved = False
          if PAUSE_EVERY_STEP:
              input() # pause everystep
 
+         if OSCILLATORY_SHEAR_ASSAY:
+             for d in range(12):
+                if self.apply_parallel_disp[d]:
+                    BOUNDARY_DISP_RATES_PARALLEL[d] = OSCILLATORY_AMPLITUDE * math.cos(OSCILLATORY_W * stepCounter); # cos() is used because the slope of the sin() function is needed
+
+             FLAMEGPU.environment.setPropertyArrayFloat("DISP_RATES_BOUNDARIES_PARALLEL", BOUNDARY_DISP_RATES_PARALLEL); 
+
+
          if any(catb < 1 for catb in CLAMP_AGENT_TOUCHING_BOUNDARY) or any(abem > 0 for abem in ALLOW_BOUNDARY_ELASTIC_MOVEMENT):
              boundaries_moved = True
              agent = FLAMEGPU.agent("ECM")
-             minmaxPositions = list()
-             minmaxPositions.append(agent.maxFloat("x"))
-             minmaxPositions.append(agent.minFloat("x"))
-             minmaxPositions.append(agent.maxFloat("y"))
-             minmaxPositions.append(agent.minFloat("y"))
-             minmaxPositions.append(agent.maxFloat("z"))
-             minmaxPositions.append(agent.minFloat("z"))
+             minmax_positions = list()
+             minmax_positions.append(agent.maxFloat("x"))
+             minmax_positions.append(agent.minFloat("x"))
+             minmax_positions.append(agent.maxFloat("y"))
+             minmax_positions.append(agent.minFloat("y"))
+             minmax_positions.append(agent.maxFloat("z"))
+             minmax_positions.append(agent.minFloat("z"))
              boundary_equil_distances = list()             
              boundary_equil_distances.append(ECM_BOUNDARY_EQUILIBRIUM_DISTANCE)
              boundary_equil_distances.append(-ECM_BOUNDARY_EQUILIBRIUM_DISTANCE)
@@ -462,9 +490,9 @@ class MoveBoundaries(pyflamegpu.HostFunctionCallback):
              for i in range(6): 
                 if CLAMP_AGENT_TOUCHING_BOUNDARY[i] < 1: 
                     if ALLOW_BOUNDARY_ELASTIC_MOVEMENT[i] > 0:
-                        BOUNDARY_COORDS[i] = minmaxPositions[i] + boundary_equil_distances[i]
+                        BOUNDARY_COORDS[i] = minmax_positions[i] + boundary_equil_distances[i]
                     else:
-                        BOUNDARY_COORDS[i] = minmaxPositions[i]
+                        BOUNDARY_COORDS[i] = minmax_positions[i]
 
              bcs = [BOUNDARY_COORDS[0], BOUNDARY_COORDS[1], BOUNDARY_COORDS[2], BOUNDARY_COORDS[3], BOUNDARY_COORDS[4], BOUNDARY_COORDS[5]]  #+X,-X,+Y,-Y,+Z,-Z
              FLAMEGPU.environment.setPropertyArrayFloat("COORDS_BOUNDARIES", bcs)        
