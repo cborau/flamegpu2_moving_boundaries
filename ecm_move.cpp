@@ -110,6 +110,19 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
   float f_by_neg = 0.0;
   float f_bz_pos = 0.0;
   float f_bz_neg = 0.0;
+
+  float f_bx_pos_y = 0.0;
+  float f_bx_pos_z = 0.0;
+  float f_bx_neg_y = 0.0;
+  float f_bx_neg_z = 0.0;
+  float f_by_pos_x = 0.0;
+  float f_by_pos_z = 0.0;
+  float f_by_neg_x = 0.0;
+  float f_by_neg_z = 0.0;
+  float f_bz_pos_x = 0.0;
+  float f_bz_pos_y = 0.0;
+  float f_bz_neg_x = 0.0;
+  float f_bz_neg_y = 0.0;
    
   // Mass of the ecm agent
   const float mass = FLAMEGPU->getVariable<float>("mass");
@@ -213,11 +226,13 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
     agent_vx = DISP_RATE_BOUNDARY_X_POS;
     f_bx_pos = agent_fx;
     if (ALLOW_AGENT_SLIDING_X_POS == 0) {
+        f_bx_pos_y = agent_fy;
+        f_bx_pos_z = agent_fz;
         if ((clamped_by_pos == 0) && (clamped_by_neg == 0)) { // this must be checked to avoid overwriting when agent is clamped to multiple boundaries
             agent_y = prev_agent_y;
             if (fabsf(DISP_RATE_BOUNDARY_PARALLEL_X_POS_Y) > 0.0) {
                 agent_vy = DISP_RATE_BOUNDARY_PARALLEL_X_POS_Y;
-                agent_y += agent_vy * DELTA_TIME;
+                agent_y += agent_vy * DELTA_TIME;                
             }
             else {
                 agent_vy = 0.0;
@@ -240,6 +255,8 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
     agent_vx = DISP_RATE_BOUNDARY_X_NEG;
     f_bx_neg = agent_fx;
     if (ALLOW_AGENT_SLIDING_X_NEG == 0) {
+        f_bx_neg_y = agent_fy;
+        f_bx_neg_z = agent_fz;
         if ((clamped_by_pos == 0) && (clamped_by_neg == 0)) { 
             agent_y = prev_agent_y;
             if (fabsf(DISP_RATE_BOUNDARY_PARALLEL_X_NEG_Y) > 0.0) {
@@ -267,6 +284,8 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
     agent_vy = DISP_RATE_BOUNDARY_Y_POS;
     f_by_pos = agent_fy;
     if (ALLOW_AGENT_SLIDING_Y_POS == 0) {
+        f_by_pos_x = agent_fx;
+        f_by_pos_z = agent_fz;
         if ((clamped_bx_pos == 0) && (clamped_bx_neg == 0)) { 
             agent_x = prev_agent_x;
             if (fabsf(DISP_RATE_BOUNDARY_PARALLEL_Y_POS_X) > 0.0) {
@@ -294,6 +313,8 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
     agent_vy = DISP_RATE_BOUNDARY_Y_NEG;
     f_by_neg = agent_fy;
     if (ALLOW_AGENT_SLIDING_Y_NEG == 0) {
+        f_by_neg_x = agent_fx;
+        f_by_neg_z = agent_fz;
         if ((clamped_bx_pos == 0) && (clamped_bx_neg == 0)) {
             agent_x = prev_agent_x;
             if (fabsf(DISP_RATE_BOUNDARY_PARALLEL_Y_NEG_X) > 0.0) {
@@ -321,6 +342,8 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
     agent_vz = DISP_RATE_BOUNDARY_Z_POS;
     f_bz_pos = agent_fz;
     if (ALLOW_AGENT_SLIDING_Z_POS == 0) {
+        f_bz_pos_x = agent_fx;
+        f_bz_pos_y = agent_fy;
         if ((clamped_bx_pos == 0) && (clamped_bx_neg == 0)) {
             agent_x = prev_agent_x;
             if (fabsf(DISP_RATE_BOUNDARY_PARALLEL_Z_POS_X) > 0.0) {
@@ -348,6 +371,8 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
     agent_vz = DISP_RATE_BOUNDARY_Z_NEG;
     f_bz_neg = agent_fz;
     if (ALLOW_AGENT_SLIDING_Z_NEG == 0) {
+        f_bz_neg_x = agent_fx;
+        f_bz_neg_y = agent_fy;
         if ((clamped_bx_pos == 0) && (clamped_bx_neg == 0)) {
             agent_x = prev_agent_x;
             if (fabsf(DISP_RATE_BOUNDARY_PARALLEL_Z_NEG_X) > 0.0) {
@@ -431,6 +456,18 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
   FLAMEGPU->setVariable<float>("f_by_neg", f_by_neg);
   FLAMEGPU->setVariable<float>("f_bz_pos", f_bz_pos);
   FLAMEGPU->setVariable<float>("f_bz_neg", f_bz_neg);
+  FLAMEGPU->setVariable<float>("f_bx_pos_y", f_bx_pos_y);
+  FLAMEGPU->setVariable<float>("f_bx_pos_z", f_bx_pos_z);
+  FLAMEGPU->setVariable<float>("f_bx_neg_y", f_bx_neg_y);
+  FLAMEGPU->setVariable<float>("f_bx_neg_z", f_bx_neg_z);
+  FLAMEGPU->setVariable<float>("f_by_pos_x", f_by_pos_x);
+  FLAMEGPU->setVariable<float>("f_by_pos_z", f_by_pos_z);
+  FLAMEGPU->setVariable<float>("f_by_neg_x", f_by_neg_x);
+  FLAMEGPU->setVariable<float>("f_by_neg_z", f_by_neg_z);
+  FLAMEGPU->setVariable<float>("f_bz_pos_x", f_bz_pos_x);
+  FLAMEGPU->setVariable<float>("f_bz_pos_y", f_bz_pos_y);
+  FLAMEGPU->setVariable<float>("f_bz_neg_x", f_bz_neg_x);
+  FLAMEGPU->setVariable<float>("f_bz_neg_y", f_bz_neg_y);
 
   return ALIVE;
 }

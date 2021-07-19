@@ -29,19 +29,19 @@ OSCILLATORY_SHEAR_ASSAY = True; #if true, BOUNDARY_DISP_RATES_PARALLEL options a
 
 # Interaction and mechanical parameters
 TIME_STEP = 0.05; # seconds
-STEPS = 400;
+STEPS = 750;
 BOUNDARY_COORDS = [0.5, -0.5, 0.5, -0.5, 0.5, -0.5]; #+X,-X,+Y,-Y,+Z,-Z
 BOUNDARY_DISP_RATES = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; # perpendicular to each surface (+X,-X,+Y,-Y,+Z,-Z) [units/second]
-BOUNDARY_DISP_RATES_PARALLEL = [0.0, 0.0, 0.0, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; # parallel to each surface (+X_y,+X_z,-X_y,-X_z,+Y_x,+Y_z,-Y_x,-Y_z,+Z_x,+Z_y,-Z_x,-Z_y)[units/second]
-OSCILLATORY_AMPLITUDE = 0.2; # range [0-1]
-OSCILLATORY_FREQ = 0.2; # strain oscillation frequency [s^-1]
+BOUNDARY_DISP_RATES_PARALLEL = [0.0, 0.0, 0.0, 0.0, 0.025, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]; # parallel to each surface (+X_y,+X_z,-X_y,-X_z,+Y_x,+Y_z,-Y_x,-Y_z,+Z_x,+Z_y,-Z_x,-Z_y)[units/second]
+OSCILLATORY_AMPLITUDE = 0.25; # range [0-1]
+OSCILLATORY_FREQ = 0.1; # strain oscillation frequency [s^-1]
 OSCILLATORY_W = 2 * math.pi * OSCILLATORY_FREQ * TIME_STEP; 
 
 # Parallel disp rate values are overrun in oscillatory assays
 if OSCILLATORY_SHEAR_ASSAY:
     for d in range(12):
        if abs(BOUNDARY_DISP_RATES_PARALLEL[d]) > 0.0:
-           BOUNDARY_DISP_RATES_PARALLEL[d] = OSCILLATORY_AMPLITUDE * math.cos(OSCILLATORY_W * 0); # cos() is used because the slope of the sin() function is needed
+           BOUNDARY_DISP_RATES_PARALLEL[d] = OSCILLATORY_AMPLITUDE * math.cos(OSCILLATORY_W * 0.0) * OSCILLATORY_W / TIME_STEP; # cos(w*t)*w is used because the slope of the sin(w*t) function is needed. Expressed in units/sec
 
 
 POISSON_DIRS = [0, 1] # 0: xdir, 1:ydir, 2:zdir. poisson_ratio ~= -incL(dir1)/incL(dir2); dir2 is the direction in which the load is applied
@@ -62,7 +62,7 @@ ECM_BOUNDARY_EQUILIBRIUM_DISTANCE = 0.0;
 
 
 ECM_K_ELAST = 1.0;
-ECM_D_DUMPING = 1.0;
+ECM_D_DUMPING = 0.5;
 ECM_MASS = 1.0;
 
 
@@ -80,9 +80,10 @@ MAX_EXPECTED_BOUNDARY_POS = max(BOUNDARY_DISP_RATES) * STEPS * TIME_STEP + 1.0;
 MIN_EXPECTED_BOUNDARY_POS = min(BOUNDARY_DISP_RATES) * STEPS * TIME_STEP - 1.0;
 
 BPOS = make_dataclass("BPOS", [("xpos", float), ("xneg", float), ("ypos", float), ("yneg", float), ("zpos", float), ("zneg", float)])
-
 # Use a dataframe to store boundary positions over time
 BPOS_OVER_TIME = pd.DataFrame([BPOS(BOUNDARY_COORDS[0], BOUNDARY_COORDS[1], BOUNDARY_COORDS[2], BOUNDARY_COORDS[3], BOUNDARY_COORDS[4], BOUNDARY_COORDS[5])])
+OSOT = make_dataclass("OSOT", [("strain", float)])
+OSCILLATORY_STRAIN_OVER_TIME =  pd.DataFrame([OSOT(0)])
 
 # Some checkings
 critical_error = False
@@ -257,15 +258,27 @@ ecm_agent.newVariableFloat("fz");
 ecm_agent.newVariableFloat("k_elast");
 ecm_agent.newVariableFloat("d_dumping");
 ecm_agent.newVariableFloat("mass");
-ecm_agent.newVariableFloat("boundary_fx"); #force coming from the boundaries. Currently unused
+ecm_agent.newVariableFloat("boundary_fx"); #boundary_f[A]: normal force coming from boundary [A] when elastic boundaries option is selected.
 ecm_agent.newVariableFloat("boundary_fy");
 ecm_agent.newVariableFloat("boundary_fz");
-ecm_agent.newVariableFloat("f_bx_pos"); #force transmitted to the boundary when agent is clamped
+ecm_agent.newVariableFloat("f_bx_pos"); #f_b[A]_[B]: normal force transmitted to the boundary [A]_[B] when agent is clamped
 ecm_agent.newVariableFloat("f_bx_neg");
 ecm_agent.newVariableFloat("f_by_pos");
 ecm_agent.newVariableFloat("f_by_neg");
 ecm_agent.newVariableFloat("f_bz_pos");
 ecm_agent.newVariableFloat("f_bz_neg");
+ecm_agent.newVariableFloat("f_bx_pos_y"); #f_b[A]_[B]_[C]: shear force transmitted to the boundary [A]_[B] in the direction [C] when agent is clamped
+ecm_agent.newVariableFloat("f_bx_pos_z");
+ecm_agent.newVariableFloat("f_bx_neg_y");
+ecm_agent.newVariableFloat("f_bx_neg_z");
+ecm_agent.newVariableFloat("f_by_pos_x"); 
+ecm_agent.newVariableFloat("f_by_pos_z");
+ecm_agent.newVariableFloat("f_by_neg_x");
+ecm_agent.newVariableFloat("f_by_neg_z");
+ecm_agent.newVariableFloat("f_bz_pos_x"); 
+ecm_agent.newVariableFloat("f_bz_pos_y");
+ecm_agent.newVariableFloat("f_bz_neg_x");
+ecm_agent.newVariableFloat("f_bz_neg_y");
 ecm_agent.newVariableFloat("f_extension");
 ecm_agent.newVariableFloat("f_compression");
 ecm_agent.newVariableFloat("elastic_energy");
@@ -409,6 +422,18 @@ class initAgentPopulations(pyflamegpu.HostFunctionCallback):
                 instance.setVariableFloat("f_by_neg", 0.0);
                 instance.setVariableFloat("f_bz_pos", 0.0);
                 instance.setVariableFloat("f_bz_neg", 0.0);
+                instance.setVariableFloat("f_bx_pos_y", 0.0);
+                instance.setVariableFloat("f_bx_pos_z", 0.0);
+                instance.setVariableFloat("f_bx_neg_y", 0.0);
+                instance.setVariableFloat("f_bx_neg_z", 0.0);
+                instance.setVariableFloat("f_by_pos_x", 0.0);
+                instance.setVariableFloat("f_by_pos_z", 0.0);
+                instance.setVariableFloat("f_by_neg_x", 0.0);
+                instance.setVariableFloat("f_by_neg_z", 0.0);
+                instance.setVariableFloat("f_bz_pos_x", 0.0);
+                instance.setVariableFloat("f_bz_pos_y", 0.0);
+                instance.setVariableFloat("f_bz_neg_x", 0.0);
+                instance.setVariableFloat("f_bz_neg_y", 0.0);
                 instance.setVariableFloat("f_extension", 0.0);
                 instance.setVariableFloat("f_compression", 0.0);
                 instance.setVariableFloat("elastic_energy", 0.0);
@@ -455,17 +480,19 @@ class MoveBoundaries(pyflamegpu.HostFunctionCallback):
      def run(self, FLAMEGPU):
          global stepCounter
          global BOUNDARY_COORDS, BOUNDARY_DISP_RATES, ALLOW_BOUNDARY_ELASTIC_MOVEMENT, BOUNDARY_STIFFNESS, BOUNDARY_DUMPING, BPOS_OVER_TIME
-         global CLAMP_AGENT_TOUCHING_BOUNDARY, OSCILLATORY_SHEAR_ASSAY, OSCILLATORY_AMPLITUDE, OSCILLATORY_W
+         global CLAMP_AGENT_TOUCHING_BOUNDARY, OSCILLATORY_SHEAR_ASSAY, OSCILLATORY_AMPLITUDE, OSCILLATORY_W, OSCILLATORY_STRAIN_OVER_TIME
          global DEBUG_PRINTING, PAUSE_EVERY_STEP, TIME_STEP
          
          boundaries_moved = False
          if PAUSE_EVERY_STEP:
              input() # pause everystep
 
-         if OSCILLATORY_SHEAR_ASSAY:
+         if OSCILLATORY_SHEAR_ASSAY:            
+             new_val = pd.DataFrame([OSOT(OSCILLATORY_AMPLITUDE * math.sin(OSCILLATORY_W * stepCounter))]);
+             OSCILLATORY_STRAIN_OVER_TIME = OSCILLATORY_STRAIN_OVER_TIME.append(new_val, ignore_index=True) #TODO: FIX?
              for d in range(12):
                 if self.apply_parallel_disp[d]:
-                    BOUNDARY_DISP_RATES_PARALLEL[d] = OSCILLATORY_AMPLITUDE * math.cos(OSCILLATORY_W * stepCounter); # cos() is used because the slope of the sin() function is needed
+                    BOUNDARY_DISP_RATES_PARALLEL[d] = OSCILLATORY_AMPLITUDE * math.cos(OSCILLATORY_W * stepCounter) * OSCILLATORY_W / TIME_STEP; # cos(w*t)*t is used because the slope of the sin(w*t) function is needed
 
              FLAMEGPU.environment.setPropertyArrayFloat("DISP_RATES_BOUNDARIES_PARALLEL", BOUNDARY_DISP_RATES_PARALLEL); 
 
@@ -602,6 +629,19 @@ class SaveDataToFile(pyflamegpu.HostFunctionCallback):
                 sum_by_neg = -agent.sumFloat("f_by_neg")
                 sum_bz_pos = -agent.sumFloat("f_bz_pos")
                 sum_bz_neg = -agent.sumFloat("f_bz_neg")
+                sum_bx_pos_y = -agent.sumFloat("f_bx_pos_y")
+                sum_bx_pos_z = -agent.sumFloat("f_bx_pos_z")
+                sum_bx_neg_y = -agent.sumFloat("f_bx_neg_y")
+                sum_bx_neg_z = -agent.sumFloat("f_bx_neg_z")
+                sum_by_pos_x = -agent.sumFloat("f_by_pos_x")
+                sum_by_pos_z = -agent.sumFloat("f_by_pos_z")
+                sum_by_neg_x = -agent.sumFloat("f_by_neg_x")
+                sum_by_neg_z = -agent.sumFloat("f_by_neg_z")
+                sum_bz_pos_x = -agent.sumFloat("f_bz_pos_x")
+                sum_bz_pos_y = -agent.sumFloat("f_bz_pos_y")
+                sum_bz_neg_x = -agent.sumFloat("f_bz_neg_x")
+                sum_bz_neg_y = -agent.sumFloat("f_bz_neg_y")
+
                 coords = list()                
                 velocity = list()
                 force = list()
@@ -631,7 +671,7 @@ class SaveDataToFile(pyflamegpu.HostFunctionCallback):
                         file.write("{} {} {} \n".format(coords_ai[0],coords_ai[1],coords_ai[2]))
                     for line in self.domaindata: 
                         file.write(line  + '\n')
-                    file.write("SCALARS boundary_forces float 1" + '\n')
+                    file.write("SCALARS boundary_normal_forces float 1" + '\n')
                     file.write("LOOKUP_TABLE default" + '\n')
                     file.write(str(sum_bx_pos) + '\n')
                     file.write(str(sum_bx_neg) + '\n')
@@ -639,7 +679,7 @@ class SaveDataToFile(pyflamegpu.HostFunctionCallback):
                     file.write(str(sum_by_neg) + '\n')
                     file.write(str(sum_bz_pos) + '\n')
                     file.write(str(sum_bz_neg) + '\n')
-                    file.write("SCALARS boundary_force_scaling float 1" + '\n')
+                    file.write("SCALARS boundary_normal_force_scaling float 1" + '\n')
                     file.write("LOOKUP_TABLE default" + '\n')
                     file.write(str(abs(sum_bx_pos)) + '\n')
                     file.write(str(abs(sum_bx_neg)) + '\n')
@@ -647,13 +687,56 @@ class SaveDataToFile(pyflamegpu.HostFunctionCallback):
                     file.write(str(abs(sum_by_neg)) + '\n')
                     file.write(str(abs(sum_bz_pos)) + '\n')
                     file.write(str(abs(sum_bz_neg)) + '\n')
-                    file.write("VECTORS boundary_force_dir float" + '\n')
+                    file.write("VECTORS boundary_normal_force_dir float" + '\n')
                     file.write("1 0 0 \n" if sum_bx_pos > 0 else "-1 0 0 \n")
                     file.write("1 0 0 \n" if sum_bx_neg > 0 else "-1 0 0 \n")
                     file.write("0 1 0 \n" if sum_by_pos > 0 else "0 -1 0 \n")
                     file.write("0 1 0 \n" if sum_by_neg > 0 else "0 -1 0 \n")
                     file.write("0 0 1 \n" if sum_bz_pos > 0 else "0 0 -1 \n")
                     file.write("0 0 1 \n" if sum_bz_neg > 0 else "0 0 -1 \n")
+
+                    file.write("SCALARS boundary_shear_forces float 1" + '\n')
+                    file.write("LOOKUP_TABLE default" + '\n')
+                    file.write(str(sum_bx_pos_y) + '\n')
+                    file.write(str(sum_bx_pos_z) + '\n')
+                    file.write(str(sum_bx_neg_y) + '\n')
+                    file.write(str(sum_bx_neg_z) + '\n')
+                    file.write(str(sum_by_pos_x) + '\n')
+                    file.write(str(sum_by_pos_z) + '\n')
+                    file.write(str(sum_by_neg_x) + '\n')
+                    file.write(str(sum_by_neg_z) + '\n')
+                    file.write(str(sum_bz_pos_x) + '\n')
+                    file.write(str(sum_bz_pos_y) + '\n')
+                    file.write(str(sum_bz_neg_x) + '\n')
+                    file.write(str(sum_bz_neg_y) + '\n')
+
+                    file.write("SCALARS boundary_shear_force_scaling float 1" + '\n')
+                    file.write("LOOKUP_TABLE default" + '\n')
+                    file.write(str(abs(sum_bx_pos_y)) + '\n')
+                    file.write(str(abs(sum_bx_pos_z)) + '\n')
+                    file.write(str(abs(sum_bx_neg_y))+ '\n')
+                    file.write(str(abs(sum_bx_neg_z)) + '\n')
+                    file.write(str(abs(sum_by_pos_x)) + '\n')
+                    file.write(str(abs(sum_by_pos_z)) + '\n')
+                    file.write(str(abs(sum_by_neg_x)) + '\n')
+                    file.write(str(abs(sum_by_neg_z)) + '\n')
+                    file.write(str(abs(sum_bz_pos_x)) + '\n')
+                    file.write(str(abs(sum_bz_pos_y)) + '\n')
+                    file.write(str(abs(sum_bz_neg_x)) + '\n')
+                    file.write(str(abs(sum_bz_neg_y)) + '\n')
+                    file.write("VECTORS boundary_shear_force_dir float" + '\n')
+                    file.write("0 1 0 \n" if sum_bx_pos_y > 0 else "0 -1 0 \n")
+                    file.write("0 0 1 \n" if sum_bx_pos_z > 0 else "0 0 -1 \n")
+                    file.write("0 1 0 \n" if sum_bx_neg_y > 0 else "0 -1 0 \n")
+                    file.write("0 0 1 \n" if sum_bx_neg_z > 0 else "0 0 -1 \n")
+                    file.write("1 0 0 \n" if sum_by_pos_x > 0 else "-1 0 0 \n")
+                    file.write("0 0 1 \n" if sum_by_pos_z > 0 else "0 0 -1 \n")
+                    file.write("1 0 0 \n" if sum_by_neg_x > 0 else "-1 0 0 \n")
+                    file.write("0 0 1 \n" if sum_by_neg_z > 0 else "0 0 -1 \n")
+                    file.write("1 0 0 \n" if sum_bz_pos_x > 0 else "-1 0 0 \n")
+                    file.write("0 1 0 \n" if sum_bz_pos_y > 0 else "0 -1 0 \n")
+                    file.write("1 0 0 \n" if sum_bz_neg_x > 0 else "-1 0 0 \n")
+                    file.write("0 1 0 \n" if sum_bz_neg_y > 0 else "0 -1 0 \n")
                     file.write("POINT_DATA {}".format(8 + N*N*N)) #8 corners + number of ECM agents 
                     file.write("SCALARS elastic_energy float 1" + '\n')
                     file.write("LOOKUP_TABLE default" + '\n')
@@ -711,6 +794,20 @@ ecm_agent_log.logSumFloat("f_by_pos");
 ecm_agent_log.logSumFloat("f_by_neg");
 ecm_agent_log.logSumFloat("f_bz_pos");
 ecm_agent_log.logSumFloat("f_bz_neg");
+
+ecm_agent_log.logSumFloat("f_bx_pos_y");
+ecm_agent_log.logSumFloat("f_bx_pos_z");
+ecm_agent_log.logSumFloat("f_bx_neg_y");
+ecm_agent_log.logSumFloat("f_bx_neg_z");
+ecm_agent_log.logSumFloat("f_by_pos_x");
+ecm_agent_log.logSumFloat("f_by_pos_z");
+ecm_agent_log.logSumFloat("f_by_neg_x");
+ecm_agent_log.logSumFloat("f_by_neg_z");
+ecm_agent_log.logSumFloat("f_bz_pos_x");
+ecm_agent_log.logSumFloat("f_bz_pos_y");
+ecm_agent_log.logSumFloat("f_bz_neg_x");
+ecm_agent_log.logSumFloat("f_bz_neg_y");
+
 ecm_agent_log.logMeanFloat("f_bx_pos");
 ecm_agent_log.logMeanFloat("f_bx_neg");
 ecm_agent_log.logMeanFloat("f_by_pos");
@@ -940,6 +1037,9 @@ else:
     steps = logs.getStepLog();
     ecm_agent_counts = [None]*len(steps)
     BFORCE = make_dataclass("BFORCE", [("fxpos", float), ("fxneg", float), ("fypos", float), ("fyneg", float), ("fzpos", float), ("fzneg", float)])
+    BFORCE_SHEAR = make_dataclass("BFORCE_SHEAR", [("fxpos_y", float), ("fxpos_z", float), ("fxneg_y", float), ("fxneg_z", float),
+                                                   ("fypos_x", float), ("fypos_z", float), ("fyneg_x", float), ("fyneg_z", float),
+                                                   ("fzpos_x", float), ("fzpos_y", float), ("fzneg_x", float), ("fzneg_y", float)])
     
         
     incL_dir1 = (BPOS_OVER_TIME.iloc[:,POISSON_DIRS[0]*2] - BPOS_OVER_TIME.iloc[:,POISSON_DIRS[0]*2 + 1]) - (BPOS_OVER_TIME.iloc[0,POISSON_DIRS[0]*2] -  BPOS_OVER_TIME.iloc[0,POISSON_DIRS[0]*2 + 1]) 
@@ -962,11 +1062,29 @@ else:
         f_by_neg = ecm_agents.getSumFloat("f_by_neg")
         f_bz_pos = ecm_agents.getSumFloat("f_bz_pos")
         f_bz_neg = ecm_agents.getSumFloat("f_bz_neg")
+        f_bx_pos_y = ecm_agents.getSumFloat("f_bx_pos_y")
+        f_bx_pos_z = ecm_agents.getSumFloat("f_bx_pos_z")
+        f_bx_neg_y = ecm_agents.getSumFloat("f_bx_neg_y")
+        f_bx_neg_z = ecm_agents.getSumFloat("f_bx_neg_z")
+        f_by_pos_x = ecm_agents.getSumFloat("f_by_pos_x")
+        f_by_pos_z = ecm_agents.getSumFloat("f_by_pos_z")
+        f_by_neg_x = ecm_agents.getSumFloat("f_by_neg_x")
+        f_by_neg_z = ecm_agents.getSumFloat("f_by_neg_z")
+        f_bz_pos_x = ecm_agents.getSumFloat("f_bz_pos_x")
+        f_bz_pos_y = ecm_agents.getSumFloat("f_bz_pos_y")
+        f_bz_neg_x = ecm_agents.getSumFloat("f_bz_neg_x")
+        f_bz_neg_y = ecm_agents.getSumFloat("f_bz_neg_y")
+
         step_bforce = pd.DataFrame([BFORCE(f_bx_pos, f_bx_neg, f_by_pos, f_by_neg, f_bz_pos, f_bz_neg)])
+        step_bforce_shear = pd.DataFrame([BFORCE_SHEAR(f_bx_pos_y, f_bx_pos_z,f_bx_neg_y,f_bx_neg_z,
+                                                       f_by_pos_x, f_by_pos_z,f_by_neg_x,f_by_neg_z,
+                                                       f_bz_pos_x, f_bz_pos_y,f_bz_neg_x,f_bz_neg_y)])
         if counter == 0:
             BFORCE_OVER_TIME = pd.DataFrame([BFORCE(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)])
+            BFORCE_SHEAR_OVER_TIME = pd.DataFrame([BFORCE_SHEAR(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)])
         else:
             BFORCE_OVER_TIME = BFORCE_OVER_TIME.append(step_bforce, ignore_index=True)
+            BFORCE_SHEAR_OVER_TIME = BFORCE_SHEAR_OVER_TIME.append(step_bforce_shear, ignore_index=True)
         counter+=1;
     print()
     print("============================")
@@ -978,29 +1096,73 @@ else:
     print(BFORCE_OVER_TIME)
     print()
     print("============================")
+    print("BOUNDARY SHEAR FORCES OVER TIME")
+    print(BFORCE_SHEAR_OVER_TIME)
+    print()
+    print("============================")
     print("POISSON RATIO OVER TIME")
     print(POISSON_RATIO_OVER_TIME)
     print()
+    print("============================")
+    print("STRAIN OVER TIME")
+    print(OSCILLATORY_STRAIN_OVER_TIME)
+    print()
     # Plotting
-    fig,ax=plt.subplots(2,2)
+    #fig,ax=plt.subplots(2,3)
+    fig = plt.figure()
+    gs = fig.add_gridspec(2,3)
+    ax1 = fig.add_subplot(gs[0, 0])
+    ax2 = fig.add_subplot(gs[0, 1])
+    ax3 = fig.add_subplot(gs[:, 2])
+    ax4 = fig.add_subplot(gs[1, 0])
+    ax5 = fig.add_subplot(gs[1, 1])
     #BPOS_OVER_TIME.plot()
 
-    BPOS_OVER_TIME.plot(ax = ax[0,0])
+    BPOS_OVER_TIME.plot(ax = ax1)
     #ax = df['size'].plot(secondary_y=True, color='k', marker='o')
-    ax[0,0].set_xlabel('time step')
-    ax[0,0].set_ylabel('pos')
-    BFORCE_OVER_TIME.plot(ax = ax[0,1])
-    ax[0,1].set_ylabel('force')
-    ax[0,1].set_xlabel('time step')
-    POISSON_RATIO_OVER_TIME.plot(ax = ax[1,0])
-    ax[1,0].set_ylabel('poisson ratio')
-    ax[1,0].set_xlabel('time step')
-    plt.sca(ax[1,1])
+    ax1.set_xlabel('time step')
+    ax1.set_ylabel('pos')
+    BFORCE_OVER_TIME.plot(ax = ax2)
+    ax2.set_ylabel('normal force')
+    ax2.set_xlabel('time step')
+    BFORCE_SHEAR_OVER_TIME.plot(ax = ax3)
+    ax3.set_ylabel('shear force')
+    ax3.set_xlabel('time step')
+    POISSON_RATIO_OVER_TIME.plot(ax = ax4)
+    ax4.set_ylabel('poisson ratio')
+    ax4.set_xlabel('time step')
+    plt.sca(ax5)
     plt.plot(BPOS_OVER_TIME['ypos'] - 0.5,  BFORCE_OVER_TIME['fypos'])
-    ax[1,1].set_ylabel('force')
-    ax[1,1].set_xlabel('disp')
+    ax5.set_ylabel('normal force')
+    ax5.set_xlabel('disp')
 
     fig.tight_layout()
+
+    if OSCILLATORY_SHEAR_ASSAY:
+        OSCILLATORY_STRAIN_OVER_TIME.plot()
+        fig2 = plt.figure()
+        colors = np.arange(0, STEPS + 1, 1).tolist()
+        plt.scatter(OSCILLATORY_STRAIN_OVER_TIME['strain'].abs(),  BFORCE_SHEAR_OVER_TIME['fypos_x'].abs(), marker='o', c=colors, alpha=0.3, cmap='viridis')
+        plt.xlabel('strain')
+        plt.ylabel('shear force');
+        fig3 = plt.figure()
+        colors = np.arange(0, STEPS + 1, 1).tolist()
+        plt.scatter(OSCILLATORY_STRAIN_OVER_TIME['strain'].abs(),  BFORCE_SHEAR_OVER_TIME['fypos_x'], marker='o', c=colors, alpha=0.3, cmap='viridis')
+        plt.xlabel('strain')
+        plt.ylabel('shear force');
+
+        fig4, ax41 = plt.subplots()
+        x = colors
+        ax42 = ax41.twinx()
+        ax41.plot(x, OSCILLATORY_STRAIN_OVER_TIME['strain'], 'g-')
+        ax42.plot(x, BFORCE_SHEAR_OVER_TIME['fypos_x'], 'b-')
+
+        ax41.set_xlabel('steps')
+        ax41.set_ylabel('strain', color='g')
+        ax42.set_ylabel('shear force', color='b')
+        ax42.set_ylim(-35,35)
+
+
     plt.show()
     #for j in range(len(steps)):
     #  print("step",j,"ECM",ecm_agent_counts[j]) 
