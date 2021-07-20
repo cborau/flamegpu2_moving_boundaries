@@ -11,7 +11,6 @@ import time
 
 sns.set()
 
-
 start_time = time.time()
 # Set whether to run single model or ensemble, agent population size, and simulation steps 
 ENSEMBLE = False;
