@@ -1,4 +1,4 @@
-FLAMEGPU_AGENT_FUNCTION(bcorner_move, MsgNone, MsgNone) {
+FLAMEGPU_AGENT_FUNCTION(bcorner_move, flamegpu::MsgNone, flamegpu::MsgNone) {
   //Agent position vector
   float agent_x = FLAMEGPU->getVariable<float>("x");
   float agent_y = FLAMEGPU->getVariable<float>("y");
@@ -70,5 +70,5 @@ FLAMEGPU_AGENT_FUNCTION(bcorner_move, MsgNone, MsgNone) {
   FLAMEGPU->setVariable<float>("y",agent_y);
   FLAMEGPU->setVariable<float>("z",agent_z);
 
-  return ALIVE;
+  return flamegpu::ALIVE;
 }

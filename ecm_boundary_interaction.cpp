@@ -1,4 +1,4 @@
-FLAMEGPU_AGENT_FUNCTION(ecm_boundary_interaction, MsgNone, MsgNone) {
+FLAMEGPU_AGENT_FUNCTION(ecm_boundary_interaction, flamegpu::MsgNone, flamegpu::MsgNone) {
   // Agent properties in local register
   int id = FLAMEGPU->getVariable<int>("id");
 
@@ -113,5 +113,5 @@ FLAMEGPU_AGENT_FUNCTION(ecm_boundary_interaction, MsgNone, MsgNone) {
   FLAMEGPU->setVariable<float>("boundary_fy", boundary_fy);
   FLAMEGPU->setVariable<float>("boundary_fz", boundary_fz);
 
-  return ALIVE;
+  return flamegpu::ALIVE;
 }

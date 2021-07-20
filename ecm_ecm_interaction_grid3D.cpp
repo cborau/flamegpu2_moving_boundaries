@@ -16,7 +16,7 @@ FLAMEGPU_DEVICE_FUNCTION void vec3Normalize(float &x, float &y, float &z) {
   vec3Div(x, y, z, length);
 }
 
-FLAMEGPU_AGENT_FUNCTION(ecm_ecm_interaction, MsgArray3D, MsgNone) {
+FLAMEGPU_AGENT_FUNCTION(ecm_ecm_interaction, flamegpu::MsgArray3D, flamegpu::MsgNone) {
   // Agent properties in local register
   int id = FLAMEGPU->getVariable<int>("id");
 
@@ -212,5 +212,5 @@ FLAMEGPU_AGENT_FUNCTION(ecm_ecm_interaction, MsgArray3D, MsgNone) {
   FLAMEGPU->setVariable<float>("f_compression", agent_f_compression);
   FLAMEGPU->setVariable<float>("elastic_energy", agent_elastic_energy);
 
-  return ALIVE;
+  return flamegpu::ALIVE;
 }

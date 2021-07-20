@@ -80,7 +80,7 @@ FLAMEGPU_HOST_DEVICE_FUNCTION void boundPosition(int id, float &x, float &y, flo
   //   printf("Boundposition DESPUES agent %d position %2.4f, %2.4f, %2.4f ->  boundary pos: [%2.4f, %2.4f, %2.4f, %2.4f, %2.4f, %2.4f], clamping: [%d, %d, %d, %d, %d, %d] \n", id, x, y, z, bxpos, bxneg, bypos, byneg, bzpos, bzneg, cxpos, cxneg, cypos, cyneg, czpos, czneg);
   //}
 }
-FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
+FLAMEGPU_AGENT_FUNCTION(ecm_move, flamegpu::MsgNone, flamegpu::MsgNone) {
   
   int id = FLAMEGPU->getVariable<int>("id");
   //Agent position vector
@@ -469,5 +469,5 @@ FLAMEGPU_AGENT_FUNCTION(ecm_move, MsgNone, MsgNone) {
   FLAMEGPU->setVariable<float>("f_bz_neg_x", f_bz_neg_x);
   FLAMEGPU->setVariable<float>("f_bz_neg_y", f_bz_neg_y);
 
-  return ALIVE;
+  return flamegpu::ALIVE;
 }

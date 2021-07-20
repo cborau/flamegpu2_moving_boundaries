@@ -1,4 +1,4 @@
-FLAMEGPU_AGENT_FUNCTION(ecm_output_grid_location_data, MsgNone, MsgArray3D) {
+FLAMEGPU_AGENT_FUNCTION(ecm_output_grid_location_data, flamegpu::MsgNone, flamegpu::MsgArray3D) {
     FLAMEGPU->message_out.setIndex(FLAMEGPU->getVariable<uint8_t>("grid_i"), FLAMEGPU->getVariable<uint8_t>("grid_j"), FLAMEGPU->getVariable<uint8_t>("grid_k"));
     FLAMEGPU->message_out.setVariable<int>("id", FLAMEGPU->getVariable<int>("id"));
     FLAMEGPU->message_out.setVariable<float>("x", FLAMEGPU->getVariable<float>("x"));
@@ -10,5 +10,5 @@ FLAMEGPU_AGENT_FUNCTION(ecm_output_grid_location_data, MsgNone, MsgArray3D) {
     FLAMEGPU->message_out.setVariable<uint8_t>("grid_i", FLAMEGPU->getVariable<uint8_t>("grid_i"));
     FLAMEGPU->message_out.setVariable<uint8_t>("grid_j", FLAMEGPU->getVariable<uint8_t>("grid_j"));
     FLAMEGPU->message_out.setVariable<uint8_t>("grid_k", FLAMEGPU->getVariable<uint8_t>("grid_k"));
-    return ALIVE;
+    return flamegpu::ALIVE;
 }
